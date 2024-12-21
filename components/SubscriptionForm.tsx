@@ -1,3 +1,7 @@
+// components/SubscriptionForm.tsx
+// This file is used to handle the subscription form
+// It is used to display the subscription form in the home page
+
 'use client'
 
 import { useState } from 'react'
@@ -13,24 +17,38 @@ export default function SubscriptionForm() {
     setLoading(true)
 
     try {
+      // First get the IP address
+      let ip = ''
+      try {
+        const ipResponse = await fetch('https://api.ipify.org?format=json')
+        const ipData = await ipResponse.json()
+        ip = ipData.ip
+      } catch (ipError) {
+        console.error('Failed to get IP:', ipError)
+        ip = 'unknown'
+      }
+
       const { error } = await supabase
         .from('subscribers')
         .insert([{ 
           phone_number: phoneNumber,
           consent_date: new Date().toISOString(),
-          consent_ip: await fetch('https://api.ipify.org?format=json').then(r => r.json()).then(data => data.ip),
+          consent_ip: ip,
           opt_in_method: 'web_form',
           consent_message: 'I agree to receive daily spiritual messages and Bible verses. Message and data rates may apply. Reply STOP to unsubscribe.'
         }])
 
-      if (error) throw error
+      if (error) {
+        console.error('Supabase error:', error)
+        throw new Error(error.message)
+      }
 
       alert('Successfully subscribed to daily messages!')
       setPhoneNumber('')
       setConsent(false)
     } catch (error) {
-      console.error('Error:', error)
-      alert('Failed to subscribe')
+      console.error('Subscription error:', error instanceof Error ? error.message : 'Unknown error')
+      alert('Failed to subscribe: ' + (error instanceof Error ? error.message : 'Unknown error'))
     } finally {
       setLoading(false)
     }

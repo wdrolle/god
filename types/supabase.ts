@@ -1,3 +1,7 @@
+// types/supabase.ts
+// This file is used to handle the supabase types
+// It is used to handle the supabase types that are used to connect to the supabase database and the tables that are used to store the data
+
 export type Database = {
   public: {
     Tables: {

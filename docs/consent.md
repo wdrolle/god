@@ -4,7 +4,7 @@
 Daily Spiritual Messages is a service that sends daily inspirational messages and Bible verses to subscribers via SMS. The service aims to help individuals grow closer to God through daily spiritual guidance.
 
 ## Consent Collection Method
-- Web form opt-in at https://[your-domain]
+- Web form opt-in at https://jadonai.com
 - Explicit checkbox confirmation required
 - Clear terms and conditions displayed
 - IP address and timestamp recorded
