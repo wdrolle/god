@@ -1,10 +1,15 @@
 // app/api/user/preferences/route.ts
+// This is the route for getting and updating user preferences
+// It is used to get and update user preferences
+// Handles getting and updating user preferences
 
 import { NextRequest, NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
 import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
 import { cookies } from "next/headers";
 import { PrismaClient } from "@prisma/client";
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 const prisma = new PrismaClient();
 

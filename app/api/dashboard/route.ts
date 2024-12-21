@@ -1,7 +1,14 @@
+// app/api/dashboard/route.ts
+// This is the route for the dashboard
+// It is used to get the dashboard data for a user
+// Handles getting the dashboard data
+
 import { NextResponse } from "next/server";
 import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 export async function GET() {
   const supabase = createRouteHandlerClient({ cookies });

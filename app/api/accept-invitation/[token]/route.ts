@@ -1,9 +1,14 @@
 // app/api/accept-invitation/[token]/route.ts
+// This is the route for accepting an invitation
+// It is used to accept an invitation for a user
+// Handles accepting an invitation
 
 import { NextRequest, NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
 import bcryptjs from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 const prisma = new PrismaClient();
 

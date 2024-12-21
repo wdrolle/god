@@ -1,6 +1,13 @@
+// app/api/messaging-consent/route.ts
+// This is the route for storing messaging consent
+// It is used to store messaging consent for a user
+// Handles storing messaging consent
+
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 export async function POST(request: Request) {
   const supabase = createRouteHandlerClient({ cookies })

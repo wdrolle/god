@@ -1,8 +1,15 @@
+// api/chat/messages/[conversationId]/route.ts
+// This is the route for getting messages for a specific conversation
+// It is used to get the messages for the chat on the bible-chat page
+// Handles messages for a conversation
+
 import { NextResponse } from "next/server";
 import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
 import { cookies } from "next/headers";
 import { prisma } from "../../../../../lib/prisma";
 import { ChatMessage } from "@/types/chat";
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 export async function GET(
   req: Request,

@@ -1,10 +1,15 @@
 // app/api/confirm-email/route.ts
+// This is the route for confirming an email
+// It is used to confirm an email for a user
+// Handles confirming an email
 
 'use server';
 
 import { PrismaClient } from "@prisma/client";
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/library";
 import { NextRequest, NextResponse } from "next/server";
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 const prisma = new PrismaClient();
 
@@ -13,7 +18,7 @@ export async function POST(req: NextRequest) {
 
   try {
     // Retrieve the confirmation token from one_time_tokens
-    const oneTimeToken = await prisma.one_time_tokens.findUnique({
+    const oneTimeToken = await prisma.god_one_time_tokens.findUnique({
       where: { id: user_id },
     });
 
@@ -22,7 +27,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Update the user's email_confirmed_at and confirmed_at fields in auth_users
-    const updatedUser = await prisma.auth_users.update({
+    const updatedUser = await prisma.god_users.update({
       where: { id: oneTimeToken.user_id },
       data: {
         email_confirmed_at: new Date(),
@@ -33,7 +38,7 @@ export async function POST(req: NextRequest) {
     });
 
     // Delete the confirmation token from one_time_tokens after use
-    await prisma.one_time_tokens.delete({ where: { id: oneTimeToken.id } });
+    await prisma.god_one_time_tokens.delete({ where: { id: oneTimeToken.id } });
 
     return NextResponse.json({ message: "Email confirmed successfully" }, { status: 200 });
   } catch (error) {

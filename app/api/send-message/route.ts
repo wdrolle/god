@@ -1,6 +1,13 @@
+// app/api/send-message/route.ts
+// This is the route for sending a message
+// It is used to send a message to a user
+// Handles sending a message to a user
+
 import { NextResponse } from 'next/server'
 import twilio from 'twilio'
 import { supabase } from '@/lib/supabase'
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 const twilioAccountSid = process.env.TWILIO_ACCOUNT_SID
 const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN

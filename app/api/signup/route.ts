@@ -1,4 +1,7 @@
 // File: /app/api/signup/route.ts
+// This is the route for signing up a user
+// It is used to sign up a user
+// Handles signing up a user
 
 import { NextRequest, NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
@@ -6,6 +9,8 @@ import { v4 as uuidv4 } from "uuid";
 import bcrypt from "bcryptjs";
 import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
 import { cookies } from "next/headers";
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 import { prisma } from "@/lib/prisma";
 

@@ -1,8 +1,15 @@
+// api/bible-chat/route.ts
+// This is the route for getting a response from the bible-chat
+// It is used to get the response for the bible-chat on the bible-chat page
+// Handles getting a response from the bible-chat
+
 import { NextResponse } from "next/server";
 import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
 import { cookies } from "next/headers";
-import { prisma } from "../../../lib/prisma";
-import { generateResponse } from "../../../lib/utils/ollama";
+import { prisma } from "@/lib/prisma";
+import { generateResponse } from "@/lib/utils/ollama";
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 export async function POST(req: Request) {
   const supabase = createRouteHandlerClient({ cookies });
@@ -16,7 +23,19 @@ export async function POST(req: Request) {
 
     const { message, conversationId } = await req.json();
 
-    // Get user's preferences
+    // Create conversation if none exists
+    let activeConversationId = conversationId;
+    if (!activeConversationId) {
+      const conversation = await prisma.god_chat_conversations.create({
+        data: {
+          user_id: user.id,
+          title: "New Conversation",
+        },
+      });
+      activeConversationId = conversation.id;
+    }
+
+    // Get user's preferences and generate response
     const userData = await prisma.god_users.findUnique({
       where: { id: user.id },
       include: {
@@ -31,27 +50,35 @@ export async function POST(req: Request) {
       please provide guidance and biblical references for the following question: ${message}
       Please include relevant Bible verses and their references.`;
 
-    // Save user message
-    await prisma.$executeRaw`
-      INSERT INTO god.god_chat_messages (conversation_id, role, content)
-      VALUES (${conversationId}::uuid, 'user', ${message})
-    `;
-
-    // Get AI response
+    // Get AI response first
     const aiResponse = await generateResponse(prompt);
 
-    // Save AI response
-    await prisma.$executeRaw`
-      INSERT INTO god.god_chat_messages (conversation_id, role, content)
-      VALUES (${conversationId}::uuid, 'assistant', ${aiResponse})
-    `;
+    // Then use transaction to save everything
+    await prisma.$transaction(async (tx) => {
+      // Save user message
+      await tx.god_chat_messages.create({
+        data: {
+          conversation_id: activeConversationId,
+          role: "user",
+          content: message,
+        },
+      });
 
-    // Update conversation timestamp
-    await prisma.$executeRaw`
-      UPDATE god.god_chat_conversations
-      SET updated_at = NOW()
-      WHERE id = ${conversationId}::uuid
-    `;
+      // Save AI response
+      await tx.god_chat_messages.create({
+        data: {
+          conversation_id: activeConversationId,
+          role: "assistant",
+          content: aiResponse,
+        },
+      });
+
+      // Update conversation timestamp
+      await tx.god_chat_conversations.update({
+        where: { id: activeConversationId },
+        data: { updated_at: new Date() },
+      });
+    });
 
     return NextResponse.json({ message: aiResponse });
   } catch (error) {

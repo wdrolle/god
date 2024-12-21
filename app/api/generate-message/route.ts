@@ -1,4 +1,11 @@
+// app/api/generate-message/route.ts
+// This is the route for generating a message
+// It is used to generate a message for a user
+// Handles generating a message
+
 import { NextResponse } from 'next/server'
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 const FALLBACK_MESSAGES = {
   faith: "Trust in the Lord with all your heart. He will guide your path. - Proverbs 3:5-6",
