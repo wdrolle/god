@@ -1,0 +1,171 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["multiSchema"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+  schemas   = ["extensions", "god"]
+}
+
+model god_users {
+  id                       String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email                    String                   @unique @db.VarChar(255)
+  username                 String?                  @unique @db.VarChar(50)
+  first_name               String?                  @db.VarChar(50)
+  last_name                String?                  @db.VarChar(50)
+  full_name                String?                  @db.VarChar(100)
+  phone_number             String?                  @unique @db.VarChar(20)
+  avatar_url               String?
+  billing_address          Json?
+  payment_method           Json?
+  role                     user_role_enum?          @default(USER)
+  verified                 Boolean?                 @default(false)
+  timezone                 String?                  @default("UTC") @db.VarChar(50)
+  preferred_language       String?                  @default("en") @db.VarChar(10)
+  notification_preferences Json?                    @default("{\"sms\": true, \"email\": true}")
+  last_login_at            DateTime?                @default(dbgenerated("(now() AT TIME ZONE 'EST'::text)")) @db.Timestamptz(6)
+  created_at               DateTime?                @default(dbgenerated("(now() AT TIME ZONE 'EST'::text)")) @db.Timestamptz(6)
+  updated_at               DateTime?                @default(dbgenerated("(now() AT TIME ZONE 'EST'::text)")) @db.Timestamptz(6)
+  deleted_at               DateTime?                @db.Timestamptz(6)
+  phone_country            String?                  @default("US") @db.VarChar(2)
+  chat_conversations       god_chat_conversations[]
+  message_templates        god_message_templates[]
+  sent_messages            god_sent_messages[]
+  subscriptions            god_subscriptions[]
+  preferences              god_user_preferences?
+
+  @@index([email], map: "idx_users_email")
+  @@index([phone_number], map: "idx_users_phone")
+  @@schema("god")
+}
+
+model god_subscriptions {
+  id                     String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id                String?                   @db.Uuid
+  status                 subscription_status_enum? @default(TRIAL)
+  theme_ids              String[]                  @default(["faith"])
+  preferred_time         DateTime?                 @default(dbgenerated("'09:00:00'::time without time zone")) @db.Time(6)
+  frequency              String?                   @default("DAILY") @db.VarChar(20)
+  trial_ends_at          DateTime?                 @default(dbgenerated("(now() AT TIME ZONE 'EST'::text)")) @db.Timestamptz(6)
+  last_message_at        DateTime?                 @default(dbgenerated("(now() AT TIME ZONE 'EST'::text)")) @db.Timestamptz(6)
+  next_message_at        DateTime?                 @default(dbgenerated("(now() AT TIME ZONE 'EST'::text)")) @db.Timestamptz(6)
+  subscription_ends_at   DateTime?                 @default(dbgenerated("(now() AT TIME ZONE 'EST'::text)")) @db.Timestamptz(6)
+  payment_status         String?                   @db.VarChar(20)
+  stripe_customer_id     String?                   @db.VarChar(50)
+  stripe_subscription_id String?                   @db.VarChar(50)
+  created_at             DateTime?                 @default(dbgenerated("(now() AT TIME ZONE 'EST'::text)")) @db.Timestamptz(6)
+  updated_at             DateTime?                 @default(dbgenerated("(now() AT TIME ZONE 'EST'::text)")) @db.Timestamptz(6)
+  cancelled_at           DateTime?                 @default(dbgenerated("(now() AT TIME ZONE 'EST'::text)")) @db.Timestamptz(6)
+  sent_messages          god_sent_messages[]
+  user                   god_users?                @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([status], map: "idx_subscriptions_status")
+  @@index([user_id], map: "idx_subscriptions_user")
+  @@schema("god")
+}
+
+model god_message_templates {
+  id              Int                 @id @default(autoincrement())
+  theme_id        String              @db.VarChar(50)
+  prompt          String
+  message         String?
+  character_count Int?
+  language        String?             @default("en") @db.VarChar(10)
+  active          Boolean?            @default(true)
+  success_rate    Float?              @default(0)
+  times_used      Int?                @default(0)
+  last_used_at    DateTime?           @default(dbgenerated("(now() AT TIME ZONE 'EST'::text)")) @db.Timestamptz(6)
+  created_by      String?             @db.Uuid
+  created_at      DateTime?           @default(dbgenerated("(now() AT TIME ZONE 'EST'::text)")) @db.Timestamptz(6)
+  updated_at      DateTime?           @default(dbgenerated("(now() AT TIME ZONE 'EST'::text)")) @db.Timestamptz(6)
+  user            god_users?          @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  sent_messages   god_sent_messages[]
+
+  @@index([theme_id], map: "idx_message_templates_theme")
+  @@schema("god")
+}
+
+model god_sent_messages {
+  id              Int                    @id @default(autoincrement())
+  user_id         String?                @db.Uuid
+  subscription_id String?                @db.Uuid
+  phone_number    String                 @db.VarChar(20)
+  message         String
+  theme_id        String                 @db.VarChar(50)
+  template_id     Int?
+  twilio_sid      String                 @db.VarChar(50)
+  status          String?                @default("SENT") @db.VarChar(20)
+  delivery_status String?                @db.VarChar(20)
+  error_message   String?
+  sent_at         DateTime?              @default(dbgenerated("(now() AT TIME ZONE 'EST'::text)")) @db.Timestamptz(6)
+  delivered_at    DateTime?              @default(dbgenerated("(now() AT TIME ZONE 'EST'::text)")) @db.Timestamptz(6)
+  created_at      DateTime?              @default(dbgenerated("(now() AT TIME ZONE 'EST'::text)")) @db.Timestamptz(6)
+  subscription    god_subscriptions?     @relation(fields: [subscription_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  template        god_message_templates? @relation(fields: [template_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  user            god_users?             @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([phone_number], map: "idx_sent_messages_phone")
+  @@index([sent_at], map: "idx_sent_messages_sent_at")
+  @@index([subscription_id], map: "idx_sent_messages_subscription")
+  @@index([user_id], map: "idx_sent_messages_user")
+  @@schema("god")
+}
+
+model god_user_preferences {
+  id                        String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id                   String?    @unique @db.Uuid
+  theme_preferences         String[]   @default(["faith"])
+  blocked_themes            String[]   @default([])
+  preferred_bible_version   String?    @default("NIV") @db.VarChar(20)
+  message_length_preference String?    @default("MEDIUM") @db.VarChar(20)
+  created_at                DateTime?  @default(dbgenerated("(now() AT TIME ZONE 'EST'::text)")) @db.Timestamptz(6)
+  updated_at                DateTime?  @default(dbgenerated("(now() AT TIME ZONE 'EST'::text)")) @db.Timestamptz(6)
+  user                      god_users? @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([user_id], map: "idx_user_preferences_user")
+  @@schema("god")
+}
+
+model god_chat_conversations {
+  id         String              @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  user_id    String              @db.Uuid
+  title      String?             @default("New Conversation") @db.VarChar(100)
+  created_at DateTime?           @default(dbgenerated("(now() AT TIME ZONE 'EST'::text)")) @db.Timestamptz(6)
+  updated_at DateTime?           @default(dbgenerated("(now() AT TIME ZONE 'EST'::text)")) @db.Timestamptz(6)
+  user       god_users           @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  messages   god_chat_messages[]
+
+  @@schema("god")
+}
+
+model god_chat_messages {
+  id              Int                    @id @default(autoincrement())
+  conversation_id String                 @db.Uuid
+  role            String                 @db.VarChar(20)
+  content         String
+  created_at      DateTime?              @default(dbgenerated("(now() AT TIME ZONE 'EST'::text)")) @db.Timestamptz(6)
+  conversation    god_chat_conversations @relation(fields: [conversation_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@schema("god")
+}
+
+enum subscription_status_enum {
+  ACTIVE
+  PAUSED
+  CANCELLED
+  TRIAL
+
+  @@schema("god")
+}
+
+enum user_role_enum {
+  USER
+  ADMIN
+  STAKEHOLDER
+  MODERATOR
+
+  @@schema("god")
+}
