@@ -24,6 +24,7 @@ import Link from "next/link";
 import Image from "next/image";
 import Logo from "@/assets/images/logo_God.webp";
 import { countryCodes, isValidPhoneNumber, formatPhoneNumber } from "@/lib/utils/phone";
+import { ThemeProvider } from "@/components/providers/ThemeProvider";
 
 // Import the ThemeToggle with SSR disabled
 const ThemeToggle = dynamic(
@@ -160,9 +161,10 @@ export default function SignupPage() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center px-4 bg-gray-50 dark:bg-gray-900">
-      {/* Theme Toggle button - now client-only */}
-      <div className="absolute top-4 right-4">
+    <ThemeProvider>
+      <div className="min-h-screen flex flex-col items-center justify-center px-4 bg-gray-50 dark:bg-gray-900">
+        {/* Theme Toggle button - now client-only */}
+        <div className="absolute top-4 right-4">
         <ThemeToggle />
       </div>
 
@@ -193,6 +195,7 @@ export default function SignupPage() {
           {/* First/Last Name */}
           <div className="flex gap-2">
             <FormField
+              control={form.control}
               name="first_name"
               render={({ field }) => (
                 <FormItem className="flex-1">
@@ -214,8 +217,9 @@ export default function SignupPage() {
               )}
             />
             <FormField
+              control={form.control}
               name="last_name"
-              render={({ field }: { field: ControllerRenderProps<SignupFormData, "last_name"> }) => (
+              render={({ field }) => (
                 <FormItem className="flex-1">
                   <FormControl>
                     <Input
@@ -240,6 +244,7 @@ export default function SignupPage() {
           <div className="flex gap-2">
             <div className="w-[30%]">
               <FormField
+                control={form.control}
                 name="country_code"
                 render={({ field }) => (
                   <FormItem>
@@ -266,7 +271,8 @@ export default function SignupPage() {
             </div>
             <div className="w-[70%]">
               <FormField
-                name="phone"
+                control={form.control}
+                name="phone" 
                 render={({ field }) => (
                   <FormItem>
                     <FormControl>
@@ -299,7 +305,8 @@ export default function SignupPage() {
           {/* Email */}
           <FormField
             name="email"
-            render={({ field }: { field: ControllerRenderProps<SignupFormData, "email"> }) => (
+            control={form.control}
+            render={({ field }) => (
               <FormItem>
                 <FormControl>
                   <Input
@@ -325,6 +332,7 @@ export default function SignupPage() {
           <div className="flex gap-2">
             <FormField
               name="password"
+              control={form.control}
               render={({ field }) => (
                 <FormItem className="flex-1">
                   <FormControl>
@@ -348,6 +356,7 @@ export default function SignupPage() {
             />
             <FormField
               name="confirm_password"
+              control={form.control}
               render={({ field }) => (
                 <FormItem className="flex-1">
                   <FormControl>
@@ -399,8 +408,9 @@ export default function SignupPage() {
               </Link>
             </span>
           </div>
-        </Form>
+          </Form>
+        </div>
       </div>
-    </div>
+    </ThemeProvider>
   );
 }

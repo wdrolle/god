@@ -26,12 +26,12 @@ export async function GET(req: Request) {
     const preferences = await prisma.god_user_preferences.findUnique({
       where: { user_id: user.id },
       include: {
-        user: {
+        god_users: {
           select: {
             email: true,
             first_name: true,
             last_name: true,
-            phone_number: true
+            phone: true
           }
         }
       }

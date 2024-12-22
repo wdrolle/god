@@ -262,21 +262,15 @@ export default function SignupPage() {
               <div className="w-full max-w-[600px] mx-auto space-y-4">
                 <div className="flex space-x-4">
                   <FormField
-                    control={form.control}
                     name="first_name"
-                    render={({ field }: { field: ControllerRenderProps<FormData> }) => (
-                      <FormItem className="flex-1">
+                    control={form.control}
+                    render={({ field }) => (
+                      <FormItem>
                         <FormControl>
                           <Input
-                            type="text"
+                            {...field}
                             placeholder="First Name"
-                            {...field}
-                            autoComplete="off"
-                            required
-                            className={`
-                              text-center text-xl p-3 bg-transparent rounded-full
-                              ${currentThemeStyles.text} border-2 border-gray-300
-                            `}
+                            className="w-full h-11 bg-white/50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-md"
                           />
                         </FormControl>
                         <FormMessage />
@@ -284,21 +278,15 @@ export default function SignupPage() {
                     )}
                   />
                   <FormField
-                    control={form.control}
                     name="last_name"
-                    render={({ field }: { field: ControllerRenderProps<FormData> }) => (
-                      <FormItem className="flex-1">
+                    control={form.control}
+                    render={({ field }) => (
+                      <FormItem>
                         <FormControl>
                           <Input
-                            type="text"
+                            {...field}
                             placeholder="Last Name"
-                            {...field}
-                            autoComplete="off"
-                            required
-                            className={`
-                              text-center text-xl p-3 bg-transparent rounded-full
-                              ${currentThemeStyles.text} border-2 border-gray-300
-                            `}
+                            className="w-full h-11 bg-white/50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-md"
                           />
                         </FormControl>
                         <FormMessage />
@@ -308,21 +296,15 @@ export default function SignupPage() {
                 </div>
                 <div className="flex space-x-4">
                   <FormField
-                    control={form.control}
                     name="bank_name"
-                    render={({ field }: { field: ControllerRenderProps<FormData> }) => (
-                      <FormItem className="flex-1">
+                    control={form.control}
+                    render={({ field }) => (
+                      <FormItem>
                         <FormControl>
                           <Input
-                            type="text"
-                            placeholder="Client Name"
                             {...field}
-                            autoComplete="off"
-                            required
-                            className={`
-                              text-center text-xl p-3 bg-transparent rounded-full
-                              ${currentThemeStyles.text} border-2 border-gray-300
-                            `}
+                            placeholder="Client Name"
+                            className="w-full h-11 bg-white/50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-md"
                           />
                         </FormControl>
                         <FormMessage />
@@ -330,21 +312,15 @@ export default function SignupPage() {
                     )}
                   />
                   <FormField
-                    control={form.control}
                     name="bank_address"
-                    render={({ field }: { field: ControllerRenderProps<FormData> }) => (
-                      <FormItem className="flex-1">
+                    control={form.control}
+                    render={({ field }) => (
+                      <FormItem>
                         <FormControl>
                           <Input
-                            type="text"
-                            placeholder="Client Address"
                             {...field}
-                            autoComplete="off"
-                            required
-                            className={`
-                              text-center text-xl p-3 bg-transparent rounded-full
-                              ${currentThemeStyles.text} border-2 border-gray-300
-                            `}
+                            placeholder="Client Address"
+                            className="w-full h-11 bg-white/50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-md"
                           />
                         </FormControl>
                         <FormMessage />
@@ -354,20 +330,15 @@ export default function SignupPage() {
                 </div>
                 <div className="flex space-x-4">
                   <FormField
-                    control={form.control}
                     name="username"
-                    render={({ field }: { field: ControllerRenderProps<FormData> }) => (
-                      <FormItem className="flex-1">
+                    control={form.control}
+                    render={({ field }) => (
+                      <FormItem>
                         <FormControl>
                           <Input
-                            type="text"
-                            placeholder="Username"
                             {...field}
-                            required
-                            className={`
-                              text-center text-xl p-3 bg-transparent rounded-full
-                              ${currentThemeStyles.text} border-2 border-gray-300
-                            `}
+                            placeholder="Username"
+                            className="w-full h-11 bg-white/50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-md"
                           />
                         </FormControl>
                         <FormMessage />
@@ -375,21 +346,16 @@ export default function SignupPage() {
                     )}
                   />
                   <FormField
-                    control={form.control}
                     name="phone"
-                    render={({ field }: { field: ControllerRenderProps<FormData> }) => (
-                      <FormItem className="flex-1">
+                    control={form.control}
+                    render={({ field }) => (
+                      <FormItem>
                         <FormControl>
                           <Input
-                            type="text"
-                            placeholder="Phone Number"
                             {...field}
-                            required
+                            placeholder="Phone Number"
+                            className="w-full h-11 bg-white/50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-md"
                             onChange={(e) => field.onChange(formatPhoneNumber(e.target.value))}
-                            className={`
-                              text-center text-xl p-3 bg-transparent rounded-full
-                              ${currentThemeStyles.text} border-2 border-gray-300
-                            `}
                           />
                         </FormControl>
                         <FormMessage />
@@ -398,21 +364,15 @@ export default function SignupPage() {
                   />
                 </div>
                 <FormField
-                  control={form.control}
                   name="email"
-                  render={({ field }: { field: ControllerRenderProps<FormData> }) => (
-                    <FormItem className="flex-1">
+                  control={form.control}
+                  render={({ field }) => (
+                    <FormItem>
                       <FormControl>
                         <Input
-                          type="email"
-                          placeholder="Email"
                           {...field}
-                          autoComplete="off"
-                          required
-                          className={`
-                            text-center text-xl p-3 bg-transparent rounded-full
-                            ${currentThemeStyles.text} border-2 border-gray-300
-                          `}
+                          placeholder="Email"
+                          className="w-full h-11 bg-white/50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-md"
                         />
                       </FormControl>
                       <FormMessage />
@@ -421,21 +381,16 @@ export default function SignupPage() {
                 />
                 <div className="flex space-x-4">
                   <FormField
-                    control={form.control}
                     name="password"
-                    render={({ field }: { field: ControllerRenderProps<FormData> }) => (
-                      <FormItem className="flex-1">
+                    control={form.control}
+                    render={({ field }) => (
+                      <FormItem>
                         <FormControl>
                           <Input
-                            type="password"
-                            placeholder="Password"
                             {...field}
+                            placeholder="Password"
+                            className="w-full h-11 bg-white/50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-md"
                             autoComplete="new-password"
-                            required
-                            className={`
-                              text-center text-xl p-3 bg-transparent rounded-full
-                              ${currentThemeStyles.text} border-2 border-gray-300
-                            `}
                           />
                         </FormControl>
                         <FormMessage />
@@ -443,20 +398,15 @@ export default function SignupPage() {
                     )}
                   />
                   <FormField
-                    control={form.control}
                     name="confirm_password"
-                    render={({ field }: { field: ControllerRenderProps<FormData> }) => (
-                      <FormItem className="flex-1">
+                    control={form.control}
+                    render={({ field }) => (
+                      <FormItem>
                         <FormControl>
                           <Input
-                            type="password"
-                            placeholder="Confirm Password"
                             {...field}
-                            required
-                            className={`
-                              text-center text-xl p-3 bg-transparent rounded-full
-                              ${currentThemeStyles.text} border-2 border-gray-300
-                            `}
+                            placeholder="Confirm Password"
+                            className="w-full h-11 bg-white/50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-md"
                           />
                         </FormControl>
                         <FormMessage />

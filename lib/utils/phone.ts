@@ -34,42 +34,25 @@ type CountryCode = {
    * Format a phone number based on the user's chosen countryCode.
    * Adjust logic to handle the country patterns you need more precisely.
    */
-  export function formatPhoneNumber(phone: string, countryCode: string = "US"): string {
+  export function formatPhoneNumber(phone: string | null | undefined, countryCode: string = "US"): string {
+    // Return empty string if phone is null or undefined
+    if (!phone) return '';
+  
     // Remove all non-numeric characters
     const cleaned = phone.replace(/\D/g, '');
   
     // Get country specific format
     const format = countryCodes[countryCode]?.pattern || countryCodes['US'].pattern;
-    const prefix = countryCodes[countryCode]?.code || '+1';
   
-    // Format based on country
-    switch(countryCode) {
-      case 'US':
-      case 'CA':
-        if (cleaned.length === 10) {
-          return `${prefix} (${cleaned.slice(0,3)}) ${cleaned.slice(3,6)}-${cleaned.slice(6)}`;
-        }
-        break;
-      case 'UK':
-        if (cleaned.length === 10) {
-          return `${prefix} ${cleaned.slice(0,4)} ${cleaned.slice(4)}`;
-        }
-        break;
-      case 'AU':
-        if (cleaned.length === 10) {
-          return `${prefix} ${cleaned.slice(0,4)} ${cleaned.slice(4,7)} ${cleaned.slice(7)}`;
-        }
-        break;
-      // Add more country-specific formatting as needed
-      default:
-        // Default format for other countries
-        if (cleaned.length >= 10) {
-          return `${prefix} ${cleaned}`;
-        }
-    }
+    // If cleaned number is too short, return as is
+    if (cleaned.length < 10) return cleaned;
   
-    // Return partially formatted number while typing
-    return `${prefix} ${cleaned}`;
+    // Apply the format
+    let formatted = format;
+    let i = 0;
+    formatted = formatted.replace(/9/g, () => cleaned[i++] || '');
+  
+    return formatted;
   }
   
   /**

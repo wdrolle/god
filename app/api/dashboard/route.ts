@@ -4,66 +4,55 @@
 // Handles getting the dashboard data
 
 import { NextResponse } from "next/server";
-import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
-import { cookies } from "next/headers";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-export const dynamic = 'force-dynamic';
-export const runtime = 'nodejs';
 
 export async function GET() {
-  const supabase = createRouteHandlerClient({ cookies });
-
   try {
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    
-    if (authError || !user) {
+    const session = await getServerSession(authOptions);
+
+    if (!session?.user) {
       return NextResponse.json(
         { error: "Unauthorized" },
         { status: 401 }
       );
     }
 
-    // Fetch user data with related records
-    const userData = await prisma.god_users.findUnique({
-      where: { id: user.id },
+    const user = await prisma.users.findUnique({
+      where: { 
+        id: session.user.id 
+      },
       include: {
-        preferences: {
-          select: {
-            theme_preferences: true,
-            preferred_bible_version: true,
-            message_length_preference: true,
-          }
-        },
-        subscriptions: {
-          select: {
-            status: true,
-            preferred_time: true,
-            next_message_at: true,
-          },
-          orderBy: {
-            created_at: 'desc'
-          },
-          take: 1
-        }
+        god_users: true
       }
     });
 
-    if (!userData) {
+    if (!user || !user.god_users[0]) {
       return NextResponse.json(
         { error: "User not found" },
         { status: 404 }
       );
     }
 
-    // Format the response
+    const godUser = user.god_users[0];
+
     return NextResponse.json({
-      id: userData.id,
-      email: userData.email,
-      first_name: userData.first_name,
-      last_name: userData.last_name,
-      phone_number: userData.phone_number,
-      subscription: userData.subscriptions[0],
-      preferences: userData.preferences
+      id: godUser.id,
+      email: user.email,
+      first_name: godUser.first_name,
+      last_name: godUser.last_name,
+      phone_number: user.phone,
+      subscription: {
+        status: godUser.subscription_status,
+        preferred_time: null,
+        next_message_at: null
+      },
+      preferences: {
+        theme_preferences: ['faith'],
+        preferred_bible_version: 'NIV',
+        message_length_preference: 'MEDIUM'
+      }
     });
   } catch (error) {
     console.error("Dashboard error:", error);

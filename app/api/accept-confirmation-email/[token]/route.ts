@@ -16,18 +16,14 @@ export async function GET(
   { params }: { params: { token: string } }
 ) {
   try {
-    // Find the token in god_one_time_tokens
-    const token = await prisma.god_one_time_tokens.findFirst({
+    // Find the token in one_time_tokens
+    const token = await prisma.one_time_tokens.findFirst({
       where: {
-        token: params.token,
-        type: 'confirmation_token',
-        used_at: null,
-        expires_at: {
-          gt: new Date()
+        token_hash: params.token,
+        token_type: 'confirmation_token',
+        created_at: {
+          gt: new Date(Date.now() - 1000 * 60 * 60 * 24) // 24 hours ago
         }
-      },
-      include: {
-        user: true
       }
     });
 
@@ -56,22 +52,22 @@ export async function GET(
     }
 
     // Mark token as used
-    await prisma.god_one_time_tokens.update({
+    await prisma.one_time_tokens.update({
       where: {
         id: token.id
       },
       data: {
-        used_at: new Date()
+        created_at: new Date()
       }
     });
 
     // Update god_users verified status
-    await prisma.god_users.update({
+    await prisma.users.update({
       where: {
         id: token.user_id
       },
       data: {
-        verified: true
+        email_confirmed_at: new Date()
       }
     });
 

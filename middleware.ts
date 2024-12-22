@@ -1,40 +1,35 @@
-import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs';
-import { NextResponse } from 'next/server';
-import type { NextRequest } from 'next/server';
+// middleware.ts
+// This file is used to handle the middleware for the application
+// It is used to handle the middleware for the application
+// middleware.ts
 
-export async function middleware(req: NextRequest) {
-  const res = NextResponse.next();
-  const supabase = createMiddlewareClient({ req, res });
+import { withAuth } from "next-auth/middleware"
+import { NextResponse } from "next/server"
 
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
+export default withAuth(
+  function middleware(req) {
+    const token = req.nextauth.token;
+    
+    if (!token) {
+      return NextResponse.redirect(new URL('/login', req.url));
+    }
 
-  // If no session and trying to access API routes, return 401
-  if (!session && req.nextUrl.pathname.startsWith('/api/')) {
-    return new NextResponse(
-      JSON.stringify({ error: 'Unauthorized' }),
-      { 
-        status: 401,
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      }
-    );
+    // Allow the request to proceed
+    return NextResponse.next();
+  },
+  {
+    callbacks: {
+      authorized: ({ token }) => !!token,
+    },
   }
-
-  // Add user info to request headers
-  if (session) {
-    res.headers.set('X-User-Id', session.user.id);
-    res.headers.set('X-User-Email', session.user.email || '');
-  }
-
-  return res;
-}
+)
 
 export const config = {
   matcher: [
-    '/api/:path*',
-    '/((?!_next/static|_next/image|favicon.ico).*)',
-  ],
-}; 
+    '/dashboard/:path*',
+    '/codes/:path*',
+    '/stakeholders/:path*',
+    '/server/:path*',
+    '/protected-route/:path*',
+  ]
+}

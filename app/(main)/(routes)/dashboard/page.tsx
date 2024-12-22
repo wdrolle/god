@@ -6,10 +6,12 @@
 
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
+import { useSession } from "next-auth/react";
 import { Spinner } from "@nextui-org/spinner";
 import { PreferencesForm } from "@/components/PreferencesForm";
 import { formatPhoneNumber } from "@/lib/utils/phone";
+import { ThemeProvider } from "@/components/providers/ThemeProvider";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 interface UserData {
   id: string;
@@ -34,21 +36,31 @@ export default function DashboardPage() {
   const [userData, setUserData] = useState<UserData | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
-  const supabase = createClientComponentClient();
+  const { data: session, status } = useSession({
+    required: true,
+    onUnauthenticated() {
+      router.push('/login');
+    },
+  });
 
   useEffect(() => {
     const fetchUserData = async () => {
       try {
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
-        
-        if (authError || !user) {
-          router.push('/login');
-          return;
+        if (!session?.user) {
+          throw new Error('No session');
         }
 
-        const response = await fetch('/api/dashboard');
-        if (!response.ok) throw new Error('Failed to fetch user data');
-        
+        const response = await fetch('/api/dashboard', {
+          headers: {
+            'Authorization': `Bearer ${session.user.id}`
+          }
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.message || 'Failed to fetch user data');
+        }
+
         const data = await response.json();
         setUserData(data);
       } catch (error) {
@@ -58,8 +70,10 @@ export default function DashboardPage() {
       }
     };
 
-    fetchUserData();
-  }, [router, supabase]);
+    if (session?.user) {
+      fetchUserData();
+    }
+  }, [session, router]);
 
   const handleSavePreferences = async (newPreferences: any) => {
     const response = await fetch('/api/preferences', {
@@ -76,7 +90,7 @@ export default function DashboardPage() {
     router.refresh();
   };
 
-  if (loading) {
+  if (status === "loading" || loading) {
     return (
       <div className="flex h-screen items-center justify-center">
         <Spinner size="lg" />
@@ -93,52 +107,57 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* User Info Section */}
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 mb-6">
-          <h2 className="text-2xl font-semibold text-gray-900 dark:text-white mb-4">
-            Welcome, {userData.first_name}!
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <p className="text-gray-600 dark:text-gray-300">
-                Email: {userData.email}
-              </p>
-              <p className="text-gray-600 dark:text-gray-300">
-                Phone: {formatPhoneNumber(userData.phone_number, userData.phone_country || 'US')}
-              </p>
-            </div>
-            <div>
-              <p className="text-gray-600 dark:text-gray-300">
-                Subscription Status: {userData.subscription?.status || 'N/A'}
-              </p>
-              <p className="text-gray-600 dark:text-gray-300">
-                Next Message: {
-                  userData.subscription?.next_message_at 
-                  ? new Date(userData.subscription.next_message_at).toLocaleString() 
-                  : 'N/A'
-                }
-              </p>
+    <ThemeProvider>
+      <div className="min-h-screen bg-background">
+        <div className="absolute top-4 right-4">
+          <ThemeToggle />
+        </div>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          {/* User Info Section */}
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 mb-6">
+            <h2 className="text-2xl font-semibold text-gray-900 dark:text-white mb-4">
+              Welcome, {userData.first_name}!
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <p className="text-gray-600 dark:text-gray-300">
+                  Email: {userData.email}
+                </p>
+                <p className="text-gray-600 dark:text-gray-300">
+                  Phone: {userData.phone_number ? formatPhoneNumber(userData.phone_number, userData.phone_country || 'US') : 'Not provided'}
+                </p>
+              </div>
+              <div>
+                <p className="text-gray-600 dark:text-gray-300">
+                  Subscription Status: {userData.subscription?.status || 'N/A'}
+                </p>
+                <p className="text-gray-600 dark:text-gray-300">
+                  Next Message: {
+                    userData.subscription?.next_message_at 
+                    ? new Date(userData.subscription.next_message_at).toLocaleString() 
+                    : 'N/A'
+                  }
+                </p>
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* Preferences Section */}
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
-          <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
-            Preferences
-          </h3>
-          <PreferencesForm
-            initialPreferences={{
-              preferred_bible_version: userData.preferences?.preferred_bible_version || 'NIV',
-              message_length_preference: userData.preferences?.message_length_preference || 'MEDIUM',
-              theme_preferences: userData.preferences?.theme_preferences || ['faith'],
-            }}
-            onSave={handleSavePreferences}
-          />
+          {/* Preferences Section */}
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
+            <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
+              Preferences
+            </h3>
+            <PreferencesForm
+              initialPreferences={{
+                preferred_bible_version: userData.preferences?.preferred_bible_version || 'NIV',
+                message_length_preference: userData.preferences?.message_length_preference || 'MEDIUM',
+                theme_preferences: userData.preferences?.theme_preferences || ['faith'],
+              }}
+              onSave={handleSavePreferences}
+            />
+          </div>
         </div>
       </div>
-    </div>
+    </ThemeProvider>
   );
 } 

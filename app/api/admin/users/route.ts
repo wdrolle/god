@@ -43,7 +43,7 @@ export async function GET() {
         first_name: true,
         last_name: true,
         role: true,
-        verified: true,
+        subscription_status: true,
         created_at: true,
       },
       orderBy: {

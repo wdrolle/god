@@ -36,16 +36,17 @@ export async function POST(req: Request) {
     }
 
     // Get user's preferences and generate response
-    const userData = await prisma.god_users.findUnique({
-      where: { id: user.id },
-      include: {
-        preferences: {
-          select: { preferred_bible_version: true }
-        }
+    const userData = await prisma.god_user_preferences.findUnique({
+      where: { user_id: user.id },
+      select: {
+        preferred_bible_version: true,
+        theme_preferences: true,
+        message_length_preference: true,
+        blocked_themes: true
       }
     });
 
-    const bibleVersion = userData?.preferences?.preferred_bible_version || "NIV";
+    const bibleVersion = userData?.preferred_bible_version || 'NIV';
     const prompt = `You are a helpful Christian AI assistant. Using the ${bibleVersion} Bible version, 
       please provide guidance and biblical references for the following question: ${message}
       Please include relevant Bible verses and their references.`;

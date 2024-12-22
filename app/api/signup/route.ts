@@ -1,81 +1,66 @@
 // File: /app/api/signup/route.ts
 // This is the route for signing up a user
-// It is used to sign up a user
-// Handles signing up a user
 
-import { NextRequest, NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
-import { v4 as uuidv4 } from "uuid";
-import bcrypt from "bcryptjs";
-import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
-import { cookies } from "next/headers";
-export const dynamic = 'force-dynamic';
-export const runtime = 'nodejs';
+import { createClient } from '@/utils/supabase/server'
+import { NextResponse } from 'next/server'
 
-import { prisma } from "@/lib/prisma";
-
-interface SignupError {
-  message: string;
-  code?: string;
-}
-
-export async function POST(req: NextRequest) {
+export async function POST(request: Request) {
   try {
-    const body = await req.json();
-    console.log("Received signup data:", body);
+    const { email, password, first_name, last_name, phone } = await request.json()
+    const supabase = createClient()
 
-    const { id, email, first_name, last_name, phone, country_code = "US" } = body;
+    // Create auth user
+    const { data: authData, error: authError } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          first_name,
+          last_name,
+          phone
+        }
+      }
+    })
 
-    // Validate the data
-    if (!id || !email || !first_name || !last_name || !phone) {
+    if (authError) {
       return NextResponse.json(
-        { error: "Missing required fields" },
+        { error: authError.message },
         { status: 400 }
-      );
+      )
     }
 
-    // Create user in your database
-    const user = await prisma.god_users.create({
-      data: {
-        id,
-        email,
-        first_name,
-        last_name,
-        phone_number: phone,
-        role: "USER",
-        verified: false,
-        timezone: "UTC",
-        preferred_language: "en",
-        notification_preferences: { sms: true, email: true, phone_verified: false },
-        preferences: {
-          create: {
-            theme_preferences: ["faith"],
-            blocked_themes: [],
-            preferred_bible_version: "NIV",
-            message_length_preference: "MEDIUM",
-          }
-        },
-        subscriptions: {
-          create: {
-            status: "TRIAL",
-            theme_ids: ["faith"],
-            preferred_time: new Date('1970-01-01T09:00:00-05:00'),
-            frequency: "DAILY",
-          }
+    // Create user profile in your database
+    const { data: userData, error: userError } = await supabase
+      .from('god_users')
+      .insert([
+        {
+          auth_user_id: authData.user?.id,
+          email,
+          first_name,
+          last_name,
+          phone,
+          role: 'USER'
         }
-      },
-      include: {
-        preferences: true,
-        subscriptions: true
-      }
-    });
+      ])
+      .select()
+      .single()
 
-    return NextResponse.json({ success: true, user });
+    if (userError) {
+      return NextResponse.json(
+        { error: userError.message },
+        { status: 400 }
+      )
+    }
+
+    return NextResponse.json({
+      user: userData,
+      message: 'Check your email to confirm your account'
+    })
   } catch (error) {
-    console.error("Signup error:", error);
+    console.error('Signup error:', error)
     return NextResponse.json(
-      { error: "Error creating user" },
+      { error: 'An unexpected error occurred' },
       { status: 500 }
-    );
+    )
   }
 }
