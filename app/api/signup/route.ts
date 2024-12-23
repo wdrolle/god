@@ -1,66 +1,92 @@
 // File: /app/api/signup/route.ts
 // This is the route for signing up a user
+import { NextRequest, NextResponse } from 'next/server'
+import { prisma } from '@/lib/prisma' // Ensure this path is correct
+import { hash } from "bcryptjs";
+import { Resend } from 'resend';
 
-import { createClient } from '@/utils/supabase/server'
-import { NextResponse } from 'next/server'
+const resend = new Resend(process.env.RESEND_API_KEY);
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
-    const { email, password, first_name, last_name, phone } = await request.json()
-    const supabase = createClient()
+    const body = await request.json()
 
-    // Create auth user
-    const { data: authData, error: authError } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          first_name,
-          last_name,
-          phone
-        }
-      }
-    })
-
-    if (authError) {
-      return NextResponse.json(
-        { error: authError.message },
-        { status: 400 }
-      )
+    const { email, password, first_name, last_name, phone, country_code } = body as {
+      email: string
+      password: string
+      first_name: string
+      last_name: string
+      phone: string
+      country_code: string
     }
 
-    // Create user profile in your database
-    const { data: userData, error: userError } = await supabase
-      .from('god_users')
-      .insert([
-        {
-          auth_user_id: authData.user?.id,
-          email,
-          first_name,
-          last_name,
-          phone,
-          role: 'USER'
-        }
-      ])
-      .select()
-      .single()
+    // Check if user exists
+    const existingUser = await prisma.users.findUnique({
+      where: { email },
+    });
 
-    if (userError) {
+    if (existingUser) {
       return NextResponse.json(
-        { error: userError.message },
+        { error: "User already exists" },
         { status: 400 }
-      )
+      );
     }
+
+    // Hash password
+    const hashedPassword = await hash(password, 12);
+
+    // Create confirmation token
+    const confirmationToken = crypto.randomUUID();
+
+    // Create user in database
+    const user = await prisma.users.create({
+      data: {
+        email,
+        encrypted_password: hashedPassword,
+        phone,
+        confirmation_token: confirmationToken,
+        god_users: {
+          create: {
+            email,
+            first_name,
+            last_name,
+            phone,
+            role: 'USER',
+            subscription_status: 'TRIAL',
+          }
+        }
+      },
+      include: {
+        god_users: true,
+      },
+    });
+
+    // Send confirmation email
+    const confirmUrl = `${process.env.NEXT_PUBLIC_APP_URL}/confirm-email?token=${confirmationToken}`;
+    
+    await resend.emails.send({
+      from: 'info@email.2920.ai',
+      to: email,
+      subject: 'Confirm your email',
+      html: `
+        <h1>Welcome to Daily Bible Verses!</h1>
+        <p>Hi ${first_name},</p>
+        <p>Please confirm your email by clicking the link below:</p>
+        <a href="${confirmUrl}">Confirm Email</a>
+        <p>If you didn't create this account, you can ignore this email.</p>
+      `
+    });
 
     return NextResponse.json({
-      user: userData,
-      message: 'Check your email to confirm your account'
-    })
+      success: true,
+      message: "Please check your email to confirm your account"
+    });
+
   } catch (error) {
-    console.error('Signup error:', error)
+    console.error("Signup error:", error);
     return NextResponse.json(
-      { error: 'An unexpected error occurred' },
-      { status: 500 }
-    )
+      { error: (error as Error).message },
+      { status: 400 }
+    );
   }
 }

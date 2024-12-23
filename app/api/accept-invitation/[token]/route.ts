@@ -16,7 +16,7 @@ export async function POST(
   { params }: { params: { token: string } }
 ) {
   const { token } = params;
-  const { password, responsibilities, username } = await req.json();
+  const { password, username } = await req.json();
   const supabase = createRouteHandlerClient({ cookies });
 
   if (!token || !password) {

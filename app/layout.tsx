@@ -6,7 +6,7 @@ import { Inter } from 'next/font/google'
 import './tailwind.css';
 import './globals.css'
 import { Providers } from "./providers"
-import { ThemeProvider } from "@/components/providers/ThemeProvider"
+import { ThemeProvider } from '@/app/providers/theme-provider'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -18,7 +18,11 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={inter.className}>
-        <ThemeProvider>
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="system"
+          enableSystem
+        >
           <Providers>{children}</Providers>
         </ThemeProvider>
       </body>

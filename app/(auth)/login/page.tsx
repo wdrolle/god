@@ -19,14 +19,14 @@ import {
   FormField,
   FormItem,
   FormMessage,
-} from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
+} from "components/ui/form";
+import { Input } from "components/ui/input";
 import { Button } from "@nextui-org/react";
 import dynamic from "next/dynamic";
-import { ThemeProvider } from "@/components/providers/ThemeProvider"
+import { ThemeProvider } from "components/providers/ThemeProvider"
 
 const ThemeToggle = dynamic(
-  () => import("@/components/theme-toggle").then(mod => mod.ThemeToggle),
+  () => import("components/theme-toggle").then(mod => mod.ThemeToggle),
   {
     ssr: false,
   }

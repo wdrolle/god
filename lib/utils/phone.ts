@@ -31,49 +31,48 @@ type CountryCode = {
   }
   
   /**
-   * Format a phone number based on the user's chosen countryCode.
-   * Adjust logic to handle the country patterns you need more precisely.
+   * Format a phone number for display (without country code prefix)
    */
-  export function formatPhoneNumber(phone: string | null | undefined, countryCode: string = "US"): string {
-    // Return empty string if phone is null or undefined
-    if (!phone) return '';
-  
+  export function formatPhoneForDisplay(phone: string, countryCode: string = "US"): string {
     // Remove all non-numeric characters
     const cleaned = phone.replace(/\D/g, '');
   
-    // Get country specific format
-    const format = countryCodes[countryCode]?.pattern || countryCodes['US'].pattern;
+    // Format based on country
+    switch(countryCode) {
+      case 'US':
+      case 'CA':
+        if (cleaned.length <= 3) {
+          return `(${cleaned}`;
+        }
+        if (cleaned.length <= 6) {
+          return `(${cleaned.slice(0,3)}) ${cleaned.slice(3)}`;
+        }
+        return `(${cleaned.slice(0,3)}) ${cleaned.slice(3,6)}-${cleaned.slice(6,10)}`;
+      
+      // Add other country formats as needed
+      default:
+        return cleaned;
+    }
+  }
   
-    // If cleaned number is too short, return as is
-    if (cleaned.length < 10) return cleaned;
-  
-    // Apply the format
-    let formatted = format;
-    let i = 0;
-    formatted = formatted.replace(/9/g, () => cleaned[i++] || '');
-  
-    return formatted;
+  /**
+   * Format phone number for storage (with country code)
+   */
+  export function formatPhoneForStorage(phone: string, countryCode: string = "US"): string {
+    const cleaned = phone.replace(/\D/g, '');
+    const prefix = countryCodes[countryCode]?.code || '+1';
+    return `${prefix}${cleaned}`;
   }
   
   /**
    * Basic validation that checks length of the digits
-   * Adjust for stricter rules / more countries
    */
   export function isValidPhoneNumber(phone: string, countryCode: string = "US"): boolean {
     const cleaned = phone.replace(/\D/g, '');
-  
-    // Basic validation rules by country
-    switch(countryCode) {
-      case 'US':
-      case 'CA':
-        return cleaned.length === 10;
-      case 'UK':
-        return cleaned.length === 10 || cleaned.length === 11;
-      case 'AU':
-        return cleaned.length === 10;
-      // Add more country-specific validation as needed
-      default:
-        return cleaned.length >= 10 && cleaned.length <= 15;
-    }
+    const country = countryCodes[countryCode];
+    
+    if (!country) return false;
+    
+    return cleaned.length >= country.minLength && cleaned.length <= country.maxLength;
   }
   

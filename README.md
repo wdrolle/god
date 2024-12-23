@@ -14,6 +14,20 @@ pnpm dev
 bun dev
 ```
 
+Next.js on 3000 (fallback to 3001)
+Twilio webhook server on 3002
+ngrok tunneling to 3002
+
+```bash
+npm run dev        # Terminal 1 - Next.js
+npm run server     # Terminal 2 - Twilio Server
+npm run tunnel     # Terminal 3 - ngrok
+
+# OR
+
+npm run start-all # Start all services
+```
+
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
@@ -156,6 +170,7 @@ app/api/chat/conversations/route.ts             - Handles conversation creation 
 app/api/chat/conversations/[id]/route.ts        - Handles individual conversation updates
 app/api/chat/messages/[conversationId]/route.ts - Handles messages for a conversation
 app/api/bible-chat/route.ts                     - Handles AI responses
+app/api/generate-message/route.ts               - Handles message generation
 
 ### Page Components:
 app/(main)/(routes)/bible-chat/page.tsx         - Main chat interface

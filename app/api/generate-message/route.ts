@@ -3,9 +3,16 @@
 // It is used to generate a message for a user
 // Handles generating a message
 
-import { NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js';
+import { NextResponse } from 'next/server';
+
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
 const FALLBACK_MESSAGES = {
   faith: "Trust in the Lord with all your heart. He will guide your path. - Proverbs 3:5-6",
@@ -18,7 +25,7 @@ const FALLBACK_MESSAGES = {
   gratitude: "Give thanks in all circumstances; for this is God's will for you in Christ Jesus. - 1 Thessalonians 5:18",
   forgiveness: "Be kind and compassionate to one another, forgiving each other, just as in Christ God forgave you. - Ephesians 4:32",
   perseverance: "Let us not become weary in doing good, for at the proper time we will reap a harvest. - Galatians 6:9"
-}
+};
 
 async function generateMessage(prompt: string, themeId: string): Promise<string> {
   try {
@@ -33,43 +40,63 @@ async function generateMessage(prompt: string, themeId: string): Promise<string>
         prompt: prompt,
         stream: false
       }),
-    })
+    });
 
     if (!response.ok) {
-      throw new Error(`Ollama responded with status: ${response.status}`)
+      throw new Error(`Ollama responded with status: ${response.status}`);
     }
 
-    const data = await response.json()
-    return data.response
+    const data = await response.json();
+    return data.response;
 
   } catch (error) {
-    console.warn('Failed to generate AI message, using fallback:', error)
+    console.warn('Failed to generate AI message, using fallback:', error);
     // Return fallback message if AI generation fails
     return FALLBACK_MESSAGES[themeId as keyof typeof FALLBACK_MESSAGES] || 
-           "May God's love guide and strengthen you today. - Philippians 4:7"
+           "May God's love guide and strengthen you today. - Philippians 4:7";
   }
 }
 
 export async function POST(request: Request) {
   try {
-    const { prompt, themeId } = await request.json()
+    // Add CORS headers
+    const headers = {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
+    };
 
-    if (!prompt) {
-      return NextResponse.json(
-        { success: false, error: 'Prompt is required' },
-        { status: 400 }
-      )
+    // Handle preflight requests
+    if (request.method === 'OPTIONS') {
+      return new NextResponse(null, { headers });
     }
 
-    const message = await generateMessage(prompt, themeId)
+    const body = await request.json();
+    const { prompt, themeId } = body;
+
+    if (!prompt || !themeId) {
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'Both prompt and themeId are required' 
+        },
+        { 
+          status: 400,
+          headers 
+        }
+      );
+    }
+
+    const message = await generateMessage(prompt, themeId);
 
     return NextResponse.json({
       success: true,
       message,
-    })
-
+      timestamp: new Date().toISOString()
+    }, { headers });
+    
   } catch (error) {
-    console.error('Error generating message:', error)
+    console.error('Error generating message:', error);
     return NextResponse.json(
       { 
         success: false, 
@@ -77,6 +104,6 @@ export async function POST(request: Request) {
         details: process.env.NODE_ENV === 'development' ? error : undefined
       },
       { status: 500 }
-    )
+    );
   }
 } 

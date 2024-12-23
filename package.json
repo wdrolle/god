@@ -6,7 +6,21 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "server": "ts-node --transpile-only server/index.ts",
+    "tunnel": "ts-node --transpile-only server/ngrok.ts",
+    "start-all": "ts-node --transpile-only --files scripts/start-services.ts"
+  },
+  "ts-node": {
+    "compilerOptions": {
+      "module": "commonjs",
+      "esModuleInterop": true,
+      "target": "es2017",
+      "lib": [
+        "es2017"
+      ],
+      "strict": true
+    }
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",
@@ -20,23 +34,27 @@
     "@supabase/auth-helpers-nextjs": "^0.10.0",
     "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.47.10",
-    "@types/marked": "^6.0.0",
+    "@types/express": "^5.0.0",
     "@vercel/next": "^4.4.0",
     "bcryptjs": "^2.4.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "1.2.1",
     "date-fns": "^4.1.0",
     "dotenv": "^16.4.7",
+    "express": "^4.21.2",
     "langchain": "^0.3.7",
     "lucide-react": "^0.469.0",
     "marked": "^15.0.4",
-    "next": "^14.1.0",
+    "next": "^15.1.2",
     "next-auth": "^4.24.11",
-    "next-themes": "^0.4.4",
+    "next-themes": "^0.2.1",
+    "ngrok": "^5.0.0-beta.2",
+    "node-fetch": "^2.7.0",
     "react": "^18.2.0",
     "react-confetti": "^6.1.0",
     "react-dom": "^18.2.0",
     "react-hook-form": "^7.54.1",
+    "react-hot-toast": "^2.4.1",
     "resend": "^4.0.1",
     "sharp": "^0.33.5",
     "sonner": "^1.7.1",
@@ -47,6 +65,7 @@
     "@eslint/eslintrc": "^3",
     "@tailwindcss/forms": "^0.5.9",
     "@types/bcryptjs": "^2.4.6",
+    "@types/marked": "^6.0.0",
     "@types/node": "^20.17.10",
     "@types/react": "^19.0.1",
     "@types/react-dom": "^19.0.2",
@@ -57,6 +76,7 @@
     "postcss": "^8.4.49",
     "prisma": "^6.1.0",
     "tailwindcss": "^3.4.17",
+    "ts-node": "^10.9.2",
     "typescript": "^5.7.2"
   }
 }

@@ -4,14 +4,14 @@
 
 "use client";
 
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { Spinner } from "@nextui-org/spinner";
-import { PreferencesForm } from "@/components/PreferencesForm";
-import { formatPhoneNumber } from "@/lib/utils/phone";
-import { ThemeProvider } from "@/components/providers/ThemeProvider";
-import { ThemeToggle } from "@/components/theme-toggle";
+import { formatPhoneForDisplay } from "../../../../lib/utils/phone";
+import { ThemeProvider } from "../../../../components/providers/ThemeProvider";
+import { ThemeToggle } from "../../../../components/theme-toggle";
+import { PreferencesForm } from "../../../../components/PreferencesForm";
 
 interface UserData {
   id: string;
@@ -46,21 +46,10 @@ export default function DashboardPage() {
   useEffect(() => {
     const fetchUserData = async () => {
       try {
-        if (!session?.user) {
-          throw new Error('No session');
-        }
-
-        const response = await fetch('/api/dashboard', {
-          headers: {
-            'Authorization': `Bearer ${session.user.id}`
-          }
-        });
-
+        const response = await fetch('/api/dashboard');
         if (!response.ok) {
-          const error = await response.json();
-          throw new Error(error.message || 'Failed to fetch user data');
+          throw new Error('Failed to fetch user data');
         }
-
         const data = await response.json();
         setUserData(data);
       } catch (error) {
@@ -73,7 +62,7 @@ export default function DashboardPage() {
     if (session?.user) {
       fetchUserData();
     }
-  }, [session, router]);
+  }, [session]);
 
   const handleSavePreferences = async (newPreferences: any) => {
     const response = await fetch('/api/preferences', {
@@ -86,7 +75,6 @@ export default function DashboardPage() {
       throw new Error('Failed to update preferences');
     }
 
-    // Refresh the page to show updated preferences
     router.refresh();
   };
 
@@ -124,7 +112,7 @@ export default function DashboardPage() {
                   Email: {userData.email}
                 </p>
                 <p className="text-gray-600 dark:text-gray-300">
-                  Phone: {userData.phone_number ? formatPhoneNumber(userData.phone_number, userData.phone_country || 'US') : 'Not provided'}
+                  Phone: {userData.phone_number ? formatPhoneForDisplay(userData.phone_number, userData.phone_country || 'US') : 'Not provided'}
                 </p>
               </div>
               <div>

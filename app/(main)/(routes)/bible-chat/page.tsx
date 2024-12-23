@@ -8,7 +8,7 @@ import React, { useState, useEffect } from "react";
 import { Button, Dropdown, Input, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter } from "@nextui-org/react";
 import { Send, Edit2, Clock, Plus } from "lucide-react";
 import { format } from "date-fns";
-import { useTheme } from "next-themes";
+import { useTheme } from '@/lib/hooks/use-theme';
 import { marked } from "marked";
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
 
@@ -25,8 +25,39 @@ interface Conversation {
   updated_at: string;
 }
 
+async function generateMessage(prompt: string, theme: string) {
+  try {
+    const response = await fetch('/api/generate-message', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        prompt: prompt,
+        themeId: theme
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => null);
+      throw new Error(errorData?.error || `HTTP error! status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    if (!data.success) {
+      throw new Error(data.error);
+    }
+
+    return data.message;
+
+  } catch (error) {
+    console.error('Error generating message:', error);
+    throw error;
+  }
+}
+
 export default function BibleChatPage() {
-  const { theme } = useTheme();
+  const { theme, setTheme } = useTheme();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);

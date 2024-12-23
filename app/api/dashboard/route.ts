@@ -5,60 +5,42 @@
 
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
 
 export async function GET() {
-  try {
-    const session = await getServerSession(authOptions);
-
-    if (!session?.user) {
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 401 }
-      );
-    }
-
-    const user = await prisma.users.findUnique({
-      where: { 
-        id: session.user.id 
-      },
-      include: {
-        god_users: true
-      }
+  const session = await getServerSession();
+  
+  if (!session?.user) {
+    return new NextResponse(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401,
     });
+  }
 
-    if (!user || !user.god_users[0]) {
-      return NextResponse.json(
-        { error: "User not found" },
-        { status: 404 }
-      );
-    }
-
-    const godUser = user.god_users[0];
-
-    return NextResponse.json({
-      id: godUser.id,
-      email: user.email,
-      first_name: godUser.first_name,
-      last_name: godUser.last_name,
-      phone_number: user.phone,
+  try {
+    // TODO: Replace with actual database query
+    const userData = {
+      id: session.user.id,
+      email: session.user.email,
+      first_name: "John",
+      last_name: "Doe",
+      phone_number: "+1234567890",
+      phone_country: "US",
       subscription: {
-        status: godUser.subscription_status,
-        preferred_time: null,
-        next_message_at: null
+        status: "active",
+        preferred_time: "09:00",
+        next_message_at: new Date().toISOString(),
       },
       preferences: {
-        theme_preferences: ['faith'],
-        preferred_bible_version: 'NIV',
-        message_length_preference: 'MEDIUM'
-      }
-    });
+        theme_preferences: ["faith"],
+        preferred_bible_version: "NIV",
+        message_length_preference: "MEDIUM",
+      },
+    };
+
+    return NextResponse.json(userData);
   } catch (error) {
-    console.error("Dashboard error:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    console.error('Dashboard API error:', error);
+    return new NextResponse(JSON.stringify({ error: 'Internal Server Error' }), {
+      status: 500,
+    });
   }
 } 
