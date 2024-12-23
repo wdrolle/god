@@ -41,9 +41,14 @@ export default function DashboardLayout({
   const pathname = usePathname();
   const supabase = createClientComponentClient();
 
-  const handleSignOut = async () => {
-    await supabase.auth.signOut();
-    router.push("/login");
+  const handleSignOut = () => {
+    supabase.auth.signOut()
+      .then(() => {
+        router.push("/login");
+      })
+      .catch((error) => {
+        console.error("Error signing out:", error);
+      });
   };
 
   return (

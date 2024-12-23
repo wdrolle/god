@@ -1,8 +1,15 @@
+// api/chat/conversations/[id]/route.ts
+// This is the route for updating a conversation
+// It is used to update the title of a conversation
+// Handles updating a conversation
+
 import { NextResponse } from "next/server";
 import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
 import { cookies } from "next/headers";
 import { prisma } from "../../../../../lib/prisma";
 import { ChatConversation } from "@/types/chat";
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 export async function PUT(
   req: Request,

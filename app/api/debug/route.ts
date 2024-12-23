@@ -1,4 +1,11 @@
+// app/api/debug/route.ts
+// This is the route for debugging
+// It is used to debug the application
+// Handles debugging the application
+
 import { NextResponse } from 'next/server'
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 export async function GET() {
   return NextResponse.json({

@@ -1,7 +1,14 @@
+// app/api/cron/daily-messages/route.ts
+// This is the route for sending daily messages
+// It is used to send daily messages to users
+// Handles sending daily messages
+
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import twilio from 'twilio'
 import { generateMessage } from '@/lib/messageGenerator'
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 const client = twilio(
   process.env.TWILIO_ACCOUNT_SID,

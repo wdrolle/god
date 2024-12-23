@@ -1,6 +1,12 @@
 // app/api/send-confirmation-email/route.ts
+// This is the route for sending a confirmation email
+// It is used to send a confirmation email to a user
+// Handles sending a confirmation email
+
 import { NextResponse } from 'next/server';
 import { Resend } from 'resend';
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 

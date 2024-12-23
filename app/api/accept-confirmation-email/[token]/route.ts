@@ -1,78 +1,82 @@
 // app/api/accept-confirmation-email/[token]/route.ts
+// This is the route for accepting a confirmation email
+// It is used to accept a confirmation email for a user
+// Handles accepting a confirmation email
 
 import { NextRequest, NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
+import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
+import { cookies } from "next/headers";
 
-const prisma = new PrismaClient();
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
-export async function POST(
-  req: NextRequest,
+export async function GET(
+  req: Request,
   { params }: { params: { token: string } }
 ) {
-  const { token } = params;
-  console.log("Received token:", token);
-
-  if (!token) {
-    return NextResponse.json({ error: "Token is required" }, { status: 400 });
-  }
-
   try {
-    // Fetch the token data from the database using the token_hash
-    const tokenData = await prisma.one_time_tokens.findUnique({
-      where: { token_hash: token }, // Ensure token_hash is unique
-      select: { id: true, user_id: true, token_hash: true, relates_to: true },
+    // Find the token in one_time_tokens
+    const token = await prisma.one_time_tokens.findFirst({
+      where: {
+        token_hash: params.token,
+        token_type: 'confirmation_token',
+        created_at: {
+          gt: new Date(Date.now() - 1000 * 60 * 60 * 24) // 24 hours ago
+        }
+      }
     });
 
-    if (!tokenData) {
-      console.error(
-        "Invalid or expired token in POST for accept-confirmation-email"
-      );
+    if (!token) {
       return NextResponse.json(
         { error: "Invalid or expired token" },
         { status: 400 }
       );
     }
 
-    console.log("Token data:", tokenData);
-    // Confirm the user's email by updating the 'email_confirmed_at' field
-    const updatedUser = await prisma.auth_users.update({
-      where: { id: tokenData.user_id },
-      data: {
-        email_confirmed_at: new Date(),
-        updated_at: new Date(),
+    // Get Supabase client
+    const supabase = createRouteHandlerClient({ cookies });
+
+    // Update the user's email_confirmed_at in auth.users
+    const { error: updateError } = await supabase.auth.admin.updateUserById(
+      token.user_id,
+      { email_confirm: true }
+    );
+
+    if (updateError) {
+      console.error("Error updating user:", updateError);
+      return NextResponse.json(
+        { error: "Failed to confirm email" },
+        { status: 500 }
+      );
+    }
+
+    // Mark token as used
+    await prisma.one_time_tokens.update({
+      where: {
+        id: token.id
       },
+      data: {
+        created_at: new Date()
+      }
     });
 
-    console.log("Updated user on public user table:", updatedUser);
-
-    // Confirm the user's email by updating the 'emailConfirmedAt' field
-    const updatedAuthUser = await prisma.auth_users.update({
-      where: { id: tokenData.user_id },
+    // Update god_users verified status
+    await prisma.users.update({
+      where: {
+        id: token.user_id
+      },
       data: {
         email_confirmed_at: new Date()
-      },
+      }
     });
 
-    console.log("Updated user on auth table:", updatedAuthUser);
-
-    // Delete the used token
-    await prisma.one_time_tokens.delete({
-      where: { token_hash: token },
-    });
-
-    return NextResponse.json(
-      { message: "Email confirmed successfully" },
-      { status: 200 }
-    );
-  } catch (error: any) {
+    return NextResponse.json({ success: true });
+  } catch (error) {
     console.error("Error confirming email:", error);
     return NextResponse.json(
-      {
-        error: "An unexpected error occurred while confirming the email.",
-      },
+      { error: "Failed to confirm email" },
       { status: 500 }
     );
-  } finally {
-    await prisma.$disconnect();
   }
 }

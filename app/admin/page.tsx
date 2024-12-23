@@ -148,15 +148,15 @@ export default function AdminPage() {
             type="button"
             onClick={generateMessage}
             disabled={isGenerating}
-            className="w-full bg-green-500 text-white p-2 rounded hover:bg-green-600 disabled:bg-green-300 disabled:cursor-not-allowed mb-4"
+            className="w-full bg-green-500 text-white dark:text-gray-800 p-2 rounded hover:bg-green-600 disabled:bg-green-300 disabled:cursor-not-allowed mb-4"
           >
             {isGenerating ? 'Generating...' : 'Generate New Message'}
           </button>
 
           {generatedMessage && (
-            <div className="p-4 bg-gray-50 rounded border">
-              <h3 className="font-semibold mb-2">Generated Message:</h3>
-              <p>{generatedMessage}</p>
+            <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded border">
+              <h3 className="font-semibold mb-2 text-gray-800 dark:text-white">Generated Message:</h3>
+              <p className="text-gray-800 dark:text-white">{generatedMessage}</p>
             </div>
           )}
         </div>
@@ -174,12 +174,12 @@ export default function AdminPage() {
               setError('')
               setStatus('')
             }}
-            placeholder="+1XXXXXXXXXX or +34XXXXXXXXX"
+            placeholder="+1 (917) 123-4567 or +34 612 345 678"
             className={`w-full p-2 border rounded ${error ? 'border-red-500' : 'border-gray-300'}`}
             required
           />
           <p className="mt-1 text-sm text-gray-500">
-            Format: +1XXXXXXXXXX (US) or +34XXXXXXXXX (Spain)
+            Format: +1 (917) 123-4567 (US) or +34 612 345 678 (Spain)
           </p>
           {error && (
             <p className="mt-1 text-sm text-red-500">{error}</p>
@@ -188,7 +188,7 @@ export default function AdminPage() {
         
         <button 
           type="submit" 
-          className="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600 disabled:bg-blue-300 disabled:cursor-not-allowed"
+          className="w-full bg-blue-500 text-gray-800 dark:text-white p-2 rounded hover:bg-blue-600 disabled:bg-blue-300 disabled:cursor-not-allowed"
           disabled={!generatedMessage || !!error || status === 'Sending...'}
         >
           {status === 'Sending...' ? 'Sending...' : 'Send Test Message'}
@@ -196,7 +196,7 @@ export default function AdminPage() {
       </form>
 
       {status && !error && (
-        <div className="mt-4 p-4 rounded bg-green-100 text-green-700">
+        <div className="mt-4 p-4 rounded bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300">
           {status}
         </div>
       )}

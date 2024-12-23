@@ -18,47 +18,44 @@ import {
 import { cn } from "@/lib/utils"
 
 interface FormProps<TFieldValues extends FieldValues = FieldValues>
-  extends Omit<React.FormHTMLAttributes<HTMLFormElement>, 'onSubmit'> {
-  form: UseFormReturn<TFieldValues>;
-  onSubmit?: (data: TFieldValues) => void | Promise<void>;
+  extends Omit<React.FormHTMLAttributes<HTMLFormElement>, "onSubmit"> {
+  form: UseFormReturn<TFieldValues>
+  onSubmit: (data: TFieldValues) => void
 }
 
-const Form = <TFieldValues extends FieldValues = FieldValues>({
+const Form = <TFieldValues extends FieldValues>({
   form,
-  className,
   onSubmit,
   children,
+  className,
   ...props
-}: FormProps<TFieldValues>) => {
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    if (onSubmit) {
-      await form.handleSubmit(onSubmit)(e);
-    }
-  };
+}: FormProps<TFieldValues>) => (
+  <FormProvider {...form}>
+    <form onSubmit={form.handleSubmit(onSubmit)} className={cn("space-y-6", className)} {...props}>
+      {children}
+    </form>
+  </FormProvider>
+)
 
-  return (
-    <FormProvider {...form}>
-      <form
-        onSubmit={handleSubmit}
-        className={cn("space-y-6", className)}
-        {...props}
-      >
-        {children}
-      </form>
-    </FormProvider>
-  );
-}
-Form.displayName = "Form"
+const FormField = <
+  TFieldValues extends FieldValues = FieldValues,
+  TName extends FieldPath<TFieldValues> = FieldPath<TFieldValues>
+>({
+  name,
+  control,
+  render,
+}: {
+  name: TName;
+  control: Control<TFieldValues>;
+  render: (props: { field: ControllerRenderProps<TFieldValues, TName> }) => React.ReactElement;
+}) => {
+  return <Controller control={control} name={name} render={render} />;
+};
 
 const FormItem = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
   ({ className, ...props }, ref) => {
     return (
-      <div
-        ref={ref}
-        className={cn("space-y-2", className)}
-        {...props}
-      />
+      <div ref={ref} className={cn("space-y-2", className)} {...props} />
     )
   }
 )
@@ -86,49 +83,10 @@ const FormMessage = React.forwardRef<HTMLParagraphElement, React.HTMLAttributes<
 )
 FormMessage.displayName = "FormMessage"
 
-interface FormFieldProps<
-  TFieldValues extends FieldValues = FieldValues,
-  TName extends FieldPath<TFieldValues> = FieldPath<TFieldValues>
-> {
-  name: TName;
-  control?: Control<TFieldValues>;
-  render: (props: {
-    field: ControllerRenderProps<TFieldValues, TName>;
-  }) => React.ReactElement;
-}
-
-const FormField = <
-  TFieldValues extends FieldValues = FieldValues,
-  TName extends FieldPath<TFieldValues> = FieldPath<TFieldValues>
->({
-  name,
-  control,
-  render
-}: FormFieldProps<TFieldValues, TName>) => {
-  const formContext = useFormContext<TFieldValues>();
-  const formControl = control || formContext?.control;
-
-  if (!formControl) {
-    throw new Error(
-      "FormField must be used within a Form or be passed a control prop"
-    );
-  }
-
-  return (
-    <Controller
-      control={formControl}
-      name={name}
-      render={({ field }) => render({ field })}
-    />
-  );
-}
-
-FormField.displayName = "FormField"
-
 export {
   Form,
   FormItem,
   FormControl,
   FormMessage,
-  FormField
+  FormField,
 }

@@ -14,6 +14,20 @@ pnpm dev
 bun dev
 ```
 
+Next.js on 3000 (fallback to 3001)
+Twilio webhook server on 3002
+ngrok tunneling to 3002
+
+```bash
+npm run dev        # Terminal 1 - Next.js
+npm run server     # Terminal 2 - Twilio Server
+npm run tunnel     # Terminal 3 - ngrok
+
+# OR
+
+npm run start-all # Start all services
+```
+
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
@@ -150,4 +164,40 @@ If you encounter connection issues:
 2. Check correct port usage (6543 vs 5432)
 3. Ensure proper schema permissions
 4. Verify environment variables are loaded
-Let me know if you want me to add any other sections or details to the README!
+
+### API Routes:
+app/api/chat/conversations/route.ts             - Handles conversation creation (404 error here)
+app/api/chat/conversations/[id]/route.ts        - Handles individual conversation updates
+app/api/chat/messages/[conversationId]/route.ts - Handles messages for a conversation
+app/api/bible-chat/route.ts                     - Handles AI responses
+app/api/generate-message/route.ts               - Handles message generation
+
+### Page Components:
+app/(main)/(routes)/bible-chat/page.tsx         - Main chat interface
+
+### Middleware and Config:
+middleware.ts                                   - Handles API route protection
+next.config.js                                  - Next.js configuration
+
+### Types and Utils:
+types/chat.ts                                   - Type definitions for chat features
+lib/prisma.ts                                   - Prisma client setup
+lib/utils/ollama.ts                             - AI integration
+
+### Database Schema:      
+prisma/schema.prisma                            - Database schema definitions
+
+### The flow of operations:
+#### User submits message → bible-chat/page.tsx
+#### Page tries to create conversation → POST /api/chat/conversations
+#### 404 error suggests route isn't registered → Check route.ts file location
+#### If conversation exists, sends message → POST /api/bible-chat
+#### Message saved to database → Uses Prisma schema
+#### AI response generated → Uses Ollama integration
+
+### Common issues to check:
+1. File naming: Ensure route.ts is correctly named
+2. File location: Verify path structure matches Next.js conventions
+3. Export configuration: Check dynamic and runtime exports
+4. Middleware: Verify it's not blocking requests
+5. Database schema: Confirm tables exist and match Prisma schema

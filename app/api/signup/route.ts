@@ -1,76 +1,92 @@
 // File: /app/api/signup/route.ts
+// This is the route for signing up a user
+import { NextRequest, NextResponse } from 'next/server'
+import { prisma } from '@/lib/prisma' // Ensure this path is correct
+import { hash } from "bcryptjs";
+import { Resend } from 'resend';
 
-import { NextRequest, NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
-import { v4 as uuidv4 } from "uuid";
-import bcrypt from "bcryptjs";
-import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
-import { cookies } from "next/headers";
+const resend = new Resend(process.env.RESEND_API_KEY);
 
-import { prisma } from "@/lib/prisma";
-
-interface SignupError {
-  message: string;
-  code?: string;
-}
-
-export async function POST(req: NextRequest) {
+export async function POST(request: NextRequest) {
   try {
-    const body = await req.json();
-    console.log("Received signup data:", body);
+    const body = await request.json()
 
-    const { id, email, first_name, last_name, phone, country_code = "US" } = body;
+    const { email, password, first_name, last_name, phone, country_code } = body as {
+      email: string
+      password: string
+      first_name: string
+      last_name: string
+      phone: string
+      country_code: string
+    }
 
-    // Validate the data
-    if (!id || !email || !first_name || !last_name || !phone) {
+    // Check if user exists
+    const existingUser = await prisma.users.findUnique({
+      where: { email },
+    });
+
+    if (existingUser) {
       return NextResponse.json(
-        { error: "Missing required fields" },
+        { error: "User already exists" },
         { status: 400 }
       );
     }
 
-    // Create user in your database
-    const user = await prisma.god_users.create({
+    // Hash password
+    const hashedPassword = await hash(password, 12);
+
+    // Create confirmation token
+    const confirmationToken = crypto.randomUUID();
+
+    // Create user in database
+    const user = await prisma.users.create({
       data: {
-        id,
         email,
-        first_name,
-        last_name,
-        phone_number: phone,
-        role: "USER",
-        verified: false,
-        timezone: "UTC",
-        preferred_language: "en",
-        notification_preferences: { sms: true, email: true, phone_verified: false },
-        preferences: {
+        encrypted_password: hashedPassword,
+        phone,
+        confirmation_token: confirmationToken,
+        god_users: {
           create: {
-            theme_preferences: ["faith"],
-            blocked_themes: [],
-            preferred_bible_version: "NIV",
-            message_length_preference: "MEDIUM",
-          }
-        },
-        subscriptions: {
-          create: {
-            status: "TRIAL",
-            theme_ids: ["faith"],
-            preferred_time: new Date('1970-01-01T09:00:00-05:00'),
-            frequency: "DAILY",
+            email,
+            first_name,
+            last_name,
+            phone,
+            role: 'USER',
+            subscription_status: 'TRIAL',
           }
         }
       },
       include: {
-        preferences: true,
-        subscriptions: true
-      }
+        god_users: true,
+      },
     });
 
-    return NextResponse.json({ success: true, user });
+    // Send confirmation email
+    const confirmUrl = `${process.env.NEXT_PUBLIC_APP_URL}/confirm-email?token=${confirmationToken}`;
+    
+    await resend.emails.send({
+      from: 'info@email.2920.ai',
+      to: email,
+      subject: 'Confirm your email',
+      html: `
+        <h1>Welcome to Daily Bible Verses!</h1>
+        <p>Hi ${first_name},</p>
+        <p>Please confirm your email by clicking the link below:</p>
+        <a href="${confirmUrl}">Confirm Email</a>
+        <p>If you didn't create this account, you can ignore this email.</p>
+      `
+    });
+
+    return NextResponse.json({
+      success: true,
+      message: "Please check your email to confirm your account"
+    });
+
   } catch (error) {
     console.error("Signup error:", error);
     return NextResponse.json(
-      { error: "Error creating user" },
-      { status: 500 }
+      { error: (error as Error).message },
+      { status: 400 }
     );
   }
 }
