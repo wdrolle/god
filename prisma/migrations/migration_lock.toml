@@ -1,0 +1,2 @@
+# This is a necessary file for Prisma Migrate
+provider = "postgresql"

@@ -1,5 +1,12 @@
+// app/api/test-twilio/route.ts
+// This is the route for testing the Twilio connection
+// It is used to test the Twilio connection
+// Handles testing the Twilio connection
+
 import { NextResponse } from 'next/server'
 import twilio from 'twilio'
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 export async function GET() {
   const twilioAccountSid = process.env.TWILIO_ACCOUNT_SID

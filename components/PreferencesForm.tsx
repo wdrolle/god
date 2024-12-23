@@ -10,7 +10,7 @@ import { Chip } from "@nextui-org/chip";
 import { useTheme } from "next-themes";
 import { Sun, Moon } from "lucide-react";
 import dynamic from "next/dynamic";
-import { SelectModal } from "@/components/ui/select-modal";
+import { SelectModal } from "components/ui/select-modal";
 
 const BIBLE_VERSIONS = [
   { value: "NIV", label: "New International Version (NIV)" },
@@ -47,7 +47,7 @@ interface PreferencesFormProps {
 }
 
 const ThemeToggle = dynamic(
-  () => import("@/components/ThemeToggle").then(mod => mod.default),
+  () => import("components/theme-toggle").then(mod => mod.ThemeToggle),
   {
     ssr: false,
   }

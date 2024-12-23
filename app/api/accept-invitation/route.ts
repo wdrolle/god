@@ -1,4 +1,7 @@
 // app/api/accept-invitation/route.ts
+// This is the route for accepting an invitation
+// It is used to accept an invitation for a user
+// Handles accepting an invitation
 
 import { NextRequest, NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
@@ -7,6 +10,8 @@ import bcrypt from "bcryptjs";
 import { v4 as uuidv4 } from "uuid";
 import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
 import { cookies } from "next/headers";
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -37,7 +42,7 @@ export async function GET(req: NextRequest) {
       email: invitation.email,
       first_name: invitation.first_name,
       last_name: invitation.last_name,
-      phone_number: invitation.phone_number,
+      phone: invitation.phone,
     });
   } catch (error) {
     console.error("Error fetching invitation:", error);
@@ -60,10 +65,10 @@ export async function POST(req: NextRequest) {
     const { token } = await req.json();
 
     // Accept invitation logic here
-    const updatedUser = await prisma.god_users.update({
+    const updatedUser = await prisma.users.update({
       where: { id: user.id },
       data: {
-        verified: true,
+        email_confirmed_at: new Date(),
       }
     });
 

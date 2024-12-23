@@ -1,68 +1,46 @@
+// app/api/dashboard/route.ts
+// This is the route for the dashboard
+// It is used to get the dashboard data for a user
+// Handles getting the dashboard data
+
 import { NextResponse } from "next/server";
-import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
-import { cookies } from "next/headers";
-import { prisma } from "@/lib/prisma";
+import { getServerSession } from "next-auth/next";
 
 export async function GET() {
-  const supabase = createRouteHandlerClient({ cookies });
+  const session = await getServerSession();
+  
+  if (!session?.user) {
+    return new NextResponse(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401,
+    });
+  }
 
   try {
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    
-    if (authError || !user) {
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 401 }
-      );
-    }
+    // TODO: Replace with actual database query
+    const userData = {
+      id: session.user.id,
+      email: session.user.email,
+      first_name: "John",
+      last_name: "Doe",
+      phone_number: "+1234567890",
+      phone_country: "US",
+      subscription: {
+        status: "active",
+        preferred_time: "09:00",
+        next_message_at: new Date().toISOString(),
+      },
+      preferences: {
+        theme_preferences: ["faith"],
+        preferred_bible_version: "NIV",
+        message_length_preference: "MEDIUM",
+      },
+    };
 
-    // Fetch user data with related records
-    const userData = await prisma.god_users.findUnique({
-      where: { id: user.id },
-      include: {
-        preferences: {
-          select: {
-            theme_preferences: true,
-            preferred_bible_version: true,
-            message_length_preference: true,
-          }
-        },
-        subscriptions: {
-          select: {
-            status: true,
-            preferred_time: true,
-            next_message_at: true,
-          },
-          orderBy: {
-            created_at: 'desc'
-          },
-          take: 1
-        }
-      }
-    });
-
-    if (!userData) {
-      return NextResponse.json(
-        { error: "User not found" },
-        { status: 404 }
-      );
-    }
-
-    // Format the response
-    return NextResponse.json({
-      id: userData.id,
-      email: userData.email,
-      first_name: userData.first_name,
-      last_name: userData.last_name,
-      phone_number: userData.phone_number,
-      subscription: userData.subscriptions[0],
-      preferences: userData.preferences
-    });
+    return NextResponse.json(userData);
   } catch (error) {
-    console.error("Dashboard error:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    console.error('Dashboard API error:', error);
+    return new NextResponse(JSON.stringify({ error: 'Internal Server Error' }), {
+      status: 500,
+    });
   }
 } 

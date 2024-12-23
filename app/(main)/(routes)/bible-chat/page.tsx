@@ -8,8 +8,9 @@ import React, { useState, useEffect } from "react";
 import { Button, Dropdown, Input, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter } from "@nextui-org/react";
 import { Send, Edit2, Clock, Plus } from "lucide-react";
 import { format } from "date-fns";
-import { useTheme } from "next-themes";
+import { useTheme } from '@/lib/hooks/use-theme';
 import { marked } from "marked";
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
 
 interface Message {
   role: "user" | "assistant";
@@ -24,8 +25,39 @@ interface Conversation {
   updated_at: string;
 }
 
+async function generateMessage(prompt: string, theme: string) {
+  try {
+    const response = await fetch('/api/generate-message', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        prompt: prompt,
+        themeId: theme
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => null);
+      throw new Error(errorData?.error || `HTTP error! status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    if (!data.success) {
+      throw new Error(data.error);
+    }
+
+    return data.message;
+
+  } catch (error) {
+    console.error('Error generating message:', error);
+    throw error;
+  }
+}
+
 export default function BibleChatPage() {
-  const { theme } = useTheme();
+  const { theme, setTheme } = useTheme();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -96,29 +128,56 @@ export default function BibleChatPage() {
     e.preventDefault();
     if (!input.trim() || isLoading) return;
 
-    // Create new conversation if none exists
-    if (!currentConversation) {
-      await createNewConversation();
-    }
-
     const userMessage = input.trim();
     setInput("");
     setMessages(prev => [...prev, { role: "user", content: userMessage }]);
     setIsLoading(true);
 
     try {
+      // Try to get current conversation or create new one
+      let chatId = currentConversation;
+      if (!chatId) {
+        try {
+          const convResponse = await fetch("/api/chat/conversations", {
+            method: "POST",
+            headers: { 
+              "Content-Type": "application/json",
+              // Add authorization header
+              "Authorization": `Bearer ${await getAuthToken()}`
+            },
+          });
+          
+          if (!convResponse.ok) {
+            const errorData = await convResponse.json();
+            throw new Error(errorData.error || "Failed to create conversation");
+          }
+          
+          const convData = await convResponse.json();
+          chatId = convData.id;
+          setCurrentConversation(chatId);
+          setConversations(prev => [...prev, convData]);
+        } catch (error) {
+          console.error("Conversation creation error:", error);
+          throw new Error("Failed to create conversation");
+        }
+      }
+
+      // Send message with authorization
       const response = await fetch("/api/bible-chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${await getAuthToken()}`
+        },
         body: JSON.stringify({
           message: userMessage,
-          conversationId: currentConversation,
+          conversationId: chatId,
         }),
       });
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Failed to get response");
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to get response");
       }
 
       const data = await response.json();
@@ -132,6 +191,13 @@ export default function BibleChatPage() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // Add helper function to get auth token
+  const getAuthToken = async () => {
+    const supabase = createClientComponentClient();
+    const { data: { session } } = await supabase.auth.getSession();
+    return session?.access_token;
   };
 
   return (

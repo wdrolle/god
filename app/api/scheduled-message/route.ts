@@ -1,6 +1,13 @@
+// app/api/scheduled-message/route.ts
+// This is the route for sending scheduled messages
+// It is used to send scheduled messages to users
+// Handles sending scheduled messages
+
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { supabase } from '@/lib/supabase'
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 export async function POST(request: NextRequest) {
   const authHeader = request.headers.get('x-scheduled-job')

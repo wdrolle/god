@@ -1,8 +1,16 @@
+// api/chat/conversations/route.ts
+// This is the route for getting conversations for a user
+// It is used to get the conversations for the chat on the bible-chat page
+// Handles conversations for a user
+
 import { NextResponse } from "next/server";
 import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
 import { cookies } from "next/headers";
-import { prisma } from "../../../../lib/prisma";
-import { ChatConversation } from "@/types/chat";
+import { prisma } from "@/lib/prisma";
+
+// This is required for Next.js API routes
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 export async function GET(req: Request) {
   const supabase = createRouteHandlerClient({ cookies });
@@ -14,12 +22,14 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const conversations = await prisma.$queryRaw<ChatConversation[]>`
-      SELECT *
-      FROM god.god_chat_conversations
-      WHERE user_id = ${user.id}::uuid
-      ORDER BY updated_at DESC
-    `;
+    const conversations = await prisma.god_chat_conversations.findMany({
+      where: {
+        user_id: user.id,
+      },
+      orderBy: {
+        updated_at: 'desc',
+      },
+    });
 
     return NextResponse.json(conversations);
   } catch (error) {
@@ -41,20 +51,12 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // First, verify user exists in god_users table
-    const dbUser = await prisma.god_users.findUnique({
-      where: { id: user.id }
+    const conversation = await prisma.god_chat_conversations.create({
+      data: {
+        user_id: user.id,
+        title: "New Chat",
+      },
     });
-
-    if (!dbUser) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
-    }
-
-    const [conversation] = await prisma.$queryRaw<ChatConversation[]>`
-      INSERT INTO god.god_chat_conversations (user_id, title)
-      VALUES (${dbUser.id}::uuid, 'New Conversation')
-      RETURNING *
-    `;
 
     return NextResponse.json(conversation);
   } catch (error) {
