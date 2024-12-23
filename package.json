@@ -9,7 +9,9 @@
     "lint": "next lint",
     "server": "ts-node --transpile-only server/index.ts",
     "tunnel": "ts-node --transpile-only server/ngrok.ts",
-    "start-all": "ts-node --transpile-only --files scripts/start-services.ts"
+    "start-all": "npm run kill-ports && ts-node --transpile-only --files scripts/start-services.ts",
+    "kill-ports": "bash scripts/kill-ports.sh",
+    "kill-ports-win": "scripts\\kill-ports.bat"
   },
   "ts-node": {
     "compilerOptions": {

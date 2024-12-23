@@ -1,57 +1,71 @@
-const express = require('express')
-const { Twilio } = require('twilio')
-const { dotenv } = require('./config')
-import type { Request as ExpressRequest, Response as ExpressResponse } from 'express'
+import express from 'express';
+import { config } from 'dotenv';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+config();
 
-const app = express()
-const port = process.env.TWILIO_SERVER_PORT || 3002
+const execAsync = promisify(exec);
+const app = express();
+const PORT = process.env.TWILIO_SERVER_PORT || 3002;
 
-// Initialize Twilio client
-const twilioClient = new Twilio(
-  process.env.TWILIO_ACCOUNT_SID,
-  process.env.TWILIO_AUTH_TOKEN
-)
-
-// Middleware to parse JSON bodies
-app.use(express.json())
-app.use(express.urlencoded({ extended: true }))
-
-// Define types for Express
-interface TwilioRequest extends ExpressRequest {
-  body: {
-    Body: string
-    From: string
+// Check if port is in use
+async function isPortInUse(port: number): Promise<boolean> {
+  try {
+    const { stdout } = await execAsync(`lsof -i :${port}`);
+    return !!stdout;
+  } catch (error) {
+    return false; // If lsof command fails, assume port is free
   }
 }
 
-// Test route
-app.get('/', (req: ExpressRequest, res: ExpressResponse) => {
-  res.send('Twilio Messaging Service is running!')
-})
-
-// Webhook endpoint for Twilio
-app.post('/webhook/sms', async (req: TwilioRequest, res: ExpressResponse) => {
+// Kill process on port (cross-platform)
+async function killProcessOnPort(port: number): Promise<void> {
   try {
-    const { Body, From } = req.body
-
-    // Log incoming message
-    console.log(`Received message from ${From}: ${Body}`)
-
-    // Send response message
-    await twilioClient.messages.create({
-      body: 'Thank you for your message! We will get back to you soon.',
-      to: From,
-      messagingServiceSid: process.env.MESSAGING_SERVICE_SID,
-    })
-
-    res.status(200).send('Message processed')
+    if (process.platform === 'win32') {
+      // Windows
+      await execAsync(`netstat -ano | findstr :${port}`).then(async ({ stdout }) => {
+        const pid = stdout.split(/\s+/)[4];
+        if (pid) await execAsync(`taskkill /F /PID ${pid}`);
+      });
+    } else {
+      // Unix-like
+      await execAsync(`fuser -k ${port}/tcp`).catch(() => {
+        // Ignore errors if no process found
+      });
+    }
   } catch (error) {
-    console.error('Error processing message:', error)
-    res.status(500).send('Error processing message')
+    console.warn(`Warning: Could not kill process on port ${port}:`, error);
   }
-})
+}
 
-// Start server
-app.listen(port, () => {
-  console.log(`Twilio Messaging Service running at http://localhost:${port}`)
-}) 
+// Start server with proper port handling
+const startServer = async () => {
+  try {
+    // Check if port is in use
+    const portInUse = await isPortInUse(Number(PORT));
+    if (portInUse) {
+      console.log(`Port ${PORT} is in use. Attempting to free it...`);
+      await killProcessOnPort(Number(PORT));
+      // Wait a moment for the port to be freed
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+
+    // Start the server
+    app.listen(PORT, () => {
+      console.log(`Twilio Messaging Service running at http://localhost:${PORT}`);
+    });
+
+  } catch (error) {
+    console.error('Server startup error:', error);
+    process.exit(1);
+  }
+};
+
+// Handle cleanup on exit
+process.on('SIGINT', async () => {
+  console.log('\nGracefully shutting down...');
+  await killProcessOnPort(Number(PORT));
+  process.exit(0);
+});
+
+startServer(); 

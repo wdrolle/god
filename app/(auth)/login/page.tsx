@@ -23,7 +23,9 @@ import {
 import { Input } from "components/ui/input";
 import { Button } from "@nextui-org/react";
 import dynamic from "next/dynamic";
-import { ThemeProvider } from "components/providers/ThemeProvider"
+import { ThemeWrapper } from '@/components/theme-wrapper'
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { toast } from 'sonner';
 
 const ThemeToggle = dynamic(
   () => import("components/theme-toggle").then(mod => mod.ThemeToggle),
@@ -52,26 +54,39 @@ export default function LoginPage() {
     },
   });
 
-  const onSubmit = async (data: LoginFormData) => {
+  const handleSubmit = (data: LoginFormData) => {
     setIsLoading(true);
     setError(null);
 
-    try {
-      const result = await signIn("credentials", {
-        email: data.email.toLowerCase(),
-        password: data.password,
-        redirect: true,
-        callbackUrl: "/dashboard"
-      });
-    } catch (err) {
+    signIn("credentials", {
+      email: data.email.toLowerCase(),
+      password: data.password,
+      redirect: false
+    })
+    .then((result) => {
+      if (result?.error) {
+        throw new Error(result.error);
+      }
+
+      if (result?.ok) {
+        const returnUrl = new URLSearchParams(window.location.search).get('from');
+        router.push(returnUrl || '/dashboard');
+        router.refresh();
+        toast.success('Successfully signed in!');
+      }
+    })
+    .catch((err) => {
       console.error('Login error:', err);
-      setError('An unexpected error occurred');
+      setError(err instanceof Error ? err.message : 'Failed to sign in');
+      toast.error('Failed to sign in. Please check your credentials.');
+    })
+    .finally(() => {
       setIsLoading(false);
-    }
+    });
   };
 
   return (
-    <ThemeProvider>
+    <ThemeWrapper>
       <div className="min-h-screen flex flex-col items-center justify-center px-4 bg-gray-50 dark:bg-gray-900">
         <div className="absolute top-4 right-4">
           <ThemeToggle />
@@ -98,7 +113,7 @@ export default function LoginPage() {
 
           <Form 
             form={form} 
-            onSubmit={onSubmit}
+            onSubmit={handleSubmit}
             className="space-y-4"
           >
             <FormField
@@ -147,7 +162,7 @@ export default function LoginPage() {
               <Button
                 type="button"
                 variant="light"
-                onPress={() => onSubmit(form.getValues())}
+                onPress={() => handleSubmit(form.getValues())}
                 className="w-full mt-2"
               >
                 Resend Confirmation Email
@@ -176,6 +191,6 @@ export default function LoginPage() {
           </Form>
         </div>
       </div>
-    </ThemeProvider>
+    </ThemeWrapper>
   );
 }

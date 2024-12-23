@@ -19,7 +19,7 @@ const nextConfig = {
             : []),
           // 'http://localhost:3000',
           'http://localhost:3000',
-          '3.81.126.90:3000', // Added 'http://' protocol
+          '172.29.38.191:3000', // Added 'http://' protocol
           '54.158.141.213:3002',
           'https://3000-01j5j4y121wvcn8hk8bzf11kky.cloudspaces.litng.ai',
         ],
@@ -65,8 +65,12 @@ const nextConfig = {
     async rewrites() {
       return [
         {
+          source: '/api/auth/:path*',
+          destination: '/api/auth/:path*',
+        },
+        {
           source: '/api/:path*',
-          destination: '/api/:path*',
+          destination: `http://localhost:${process.env.NEXT_PUBLIC_PORT}/api/:path*`,
         },
       ];
     },

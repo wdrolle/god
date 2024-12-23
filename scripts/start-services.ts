@@ -1,80 +1,54 @@
-import { spawn, ChildProcess } from 'child_process'
-import dotenv from 'dotenv'
+import { spawn } from 'child_process'
+import { config } from 'dotenv'
 
-dotenv.config()
+config()
 
-const processes: ChildProcess[] = []
-
-function startService(command: string, args: string[], name: string): ChildProcess {
-  try {
-    const childProcess = spawn(command, args, { 
-      stdio: 'inherit',
-      shell: process.platform === 'win32' // Use shell on Windows
-    })
-    
-    childProcess.on('error', (error: Error) => {
-      console.error(`Error starting ${name}:`, error.message)
-    })
-
-    childProcess.on('exit', (code: number | null) => {
-      if (code !== 0) {
-        console.log(`${name} process exited with code ${code}`)
-      }
-    })
-
-    processes.push(childProcess)
-    return childProcess
-  } catch (error) {
-    console.error(`Failed to start ${name}:`, error)
-    throw error
+const services = [
+  {
+    name: 'Next.js',
+    command: 'npm',
+    args: ['run', 'dev'],
+    env: { PORT: process.env.NEXT_PUBLIC_PORT || '3000' }
+  },
+  {
+    name: 'Twilio Server',
+    command: 'npm',
+    args: ['run', 'server'],
+    env: { PORT: process.env.TWILIO_SERVER_PORT || '3002' }
+  },
+  {
+    name: 'Ngrok Tunnel',
+    command: 'npm',
+    args: ['run', 'tunnel'],
+    env: { PORT: process.env.NGROK_PORT || '3002' }
   }
-}
+]
 
-function cleanup() {
-  console.log('\nGracefully shutting down services...')
-  processes.forEach(proc => {
-    try {
-      proc.kill()
-    } catch (error) {
-      console.error('Error killing process:', error)
+console.log('Starting all services...\n')
+
+const processes = services.map(service => {
+  const proc = spawn(service.command, service.args, {
+    stdio: 'inherit',
+    env: { ...process.env, ...service.env }
+  })
+
+  proc.on('error', (error) => {
+    console.error(`${service.name} error:`, error)
+  })
+
+  proc.on('exit', (code) => {
+    if (code !== 0) {
+      console.log(`${service.name} process exited with code ${code}`)
     }
   })
+
+  return proc
+})
+
+console.log('All services started! Press Ctrl+C to stop all services.\n')
+
+process.on('SIGINT', () => {
+  console.log('\nStopping all services...')
+  processes.forEach(proc => proc.kill())
   process.exit(0)
-}
-
-function startAllServices() {
-  try {
-    // Start all services
-    console.log('Starting all services...')
-
-    // Start Next.js
-    const nextProcess = startService('npm', ['run', 'dev'], 'Next.js')
-
-    // Start Twilio Server after a short delay
-    setTimeout(() => {
-      const twilioProcess = startService('npm', ['run', 'server'], 'Twilio Server')
-
-      // Start ngrok tunnel after Twilio server is running
-      setTimeout(() => {
-        const ngrokProcess = startService('npm', ['run', 'tunnel'], 'ngrok')
-      }, 2000)
-    }, 1000)
-
-    console.log('\nAll services started! Press Ctrl+C to stop all services.')
-
-    // Handle process termination
-    process.on('SIGINT', cleanup)
-    process.on('SIGTERM', cleanup)
-    process.on('uncaughtException', (error) => {
-      console.error('Uncaught Exception:', error)
-      cleanup()
-    })
-
-  } catch (error) {
-    console.error('Error starting services:', error instanceof Error ? error.message : error)
-    cleanup()
-  }
-}
-
-// Start everything
-startAllServices() 
+}) 
