@@ -3,107 +3,52 @@
 // It is used to generate a message for a user
 // Handles generating a message
 
-import { createClient } from '@supabase/supabase-js';
-import { NextResponse } from 'next/server';
+import { NextResponse } from "next/server";
+import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
+import { cookies } from "next/headers";
 
-export const dynamic = 'force-dynamic';
-export const runtime = 'nodejs';
+export const runtime = 'edge';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
-
-const FALLBACK_MESSAGES = {
-  faith: "Trust in the Lord with all your heart. He will guide your path. - Proverbs 3:5-6",
-  healing: "He heals the brokenhearted and binds up their wounds. - Psalm 147:3",
-  purpose: "For I know the plans I have for you, plans to prosper you and not to harm you. - Jeremiah 29:11",
-  strength: "I can do all things through Christ who strengthens me. - Philippians 4:13",
-  peace: "Peace I leave with you; my peace I give you. Do not let your hearts be troubled. - John 14:27",
-  wisdom: "If any of you lacks wisdom, let them ask God, who gives generously to all. - James 1:5",
-  love: "Love is patient, love is kind. It does not envy, it does not boast. - 1 Corinthians 13:4",
-  gratitude: "Give thanks in all circumstances; for this is God's will for you in Christ Jesus. - 1 Thessalonians 5:18",
-  forgiveness: "Be kind and compassionate to one another, forgiving each other, just as in Christ God forgave you. - Ephesians 4:32",
-  perseverance: "Let us not become weary in doing good, for at the proper time we will reap a harvest. - Galatians 6:9"
-};
-
-async function generateMessage(prompt: string, themeId: string): Promise<string> {
+export async function POST(req: Request) {
   try {
-    // Try to connect to Ollama
-    const response = await fetch('http://localhost:11434/api/generate', {
-      method: 'POST',
+    const { prompt, conversationId, previousMessages, model, temperature, maxTokens } = await req.json();
+
+    // Call Llama model through your Ollama endpoint
+    const response = await fetch("http://localhost:11434/api/generate", {
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: 'llama3.2',
-        prompt: prompt,
+        model: "llama3.2",
+        prompt: formatPrompt(prompt, previousMessages),
+        temperature: temperature || 0.7,
+        max_tokens: maxTokens || 2000,
         stream: false
-      }),
+      })
     });
 
     if (!response.ok) {
-      throw new Error(`Ollama responded with status: ${response.status}`);
+      throw new Error('Failed to generate response from Llama');
     }
 
     const data = await response.json();
-    return data.response;
+    return NextResponse.json({ message: data.response });
 
   } catch (error) {
-    console.warn('Failed to generate AI message, using fallback:', error);
-    // Return fallback message if AI generation fails
-    return FALLBACK_MESSAGES[themeId as keyof typeof FALLBACK_MESSAGES] || 
-           "May God's love guide and strengthen you today. - Philippians 4:7";
-  }
-}
-
-export async function POST(request: Request) {
-  try {
-    // Add CORS headers
-    const headers = {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type',
-    };
-
-    // Handle preflight requests
-    if (request.method === 'OPTIONS') {
-      return new NextResponse(null, { headers });
-    }
-
-    const body = await request.json();
-    const { prompt, themeId } = body;
-
-    if (!prompt || !themeId) {
-      return NextResponse.json(
-        { 
-          success: false, 
-          error: 'Both prompt and themeId are required' 
-        },
-        { 
-          status: 400,
-          headers 
-        }
-      );
-    }
-
-    const message = await generateMessage(prompt, themeId);
-
-    return NextResponse.json({
-      success: true,
-      message,
-      timestamp: new Date().toISOString()
-    }, { headers });
-    
-  } catch (error) {
-    console.error('Error generating message:', error);
+    console.error('Error in generate-message:', error);
     return NextResponse.json(
-      { 
-        success: false, 
-        error: error instanceof Error ? error.message : 'Failed to generate message',
-        details: process.env.NODE_ENV === 'development' ? error : undefined
-      },
+      { error: "Failed to generate message" },
       { status: 500 }
     );
   }
+}
+
+function formatPrompt(prompt: string, previousMessages: any[] = []): string {
+  // Format conversation history for Llama
+  const history = previousMessages
+    .map(msg => `${msg.role === 'user' ? 'Human' : 'Assistant'}: ${msg.content}`)
+    .join('\n');
+
+  return `${history}\nHuman: ${prompt}\nAssistant:`;
 } 
