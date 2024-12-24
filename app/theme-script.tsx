@@ -1,3 +1,5 @@
+// app/theme-script.tsx
+
 export function ThemeScript() {
   return (
     <script

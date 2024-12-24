@@ -201,3 +201,224 @@ prisma/schema.prisma                            - Database schema definitions
 3. Export configuration: Check dynamic and runtime exports
 4. Middleware: Verify it's not blocking requests
 5. Database schema: Confirm tables exist and match Prisma schema
+
+# Reverting Authentication Changes
+
+If you need to revert to the previous working version using NextAuth.js, follow these steps:
+
+1. Restore the original auth files:
+
+```bash
+# Restore NextAuth configuration
+git checkout god-chat/12-23-2024-15-56 -- lib/auth.ts
+git checkout god-chat/12-23-2024-15-56 -- app/api/auth/[...nextauth]/route.ts
+git checkout god-chat/12-23-2024-15-56 -- app/(auth)/login/page.tsx
+```
+
+2. Remove Supabase auth files:
+
+```bash
+rm -f app/api/auth/session/route.ts
+```
+
+3. Update middleware.ts to use NextAuth:
+
+```typescript
+import { withAuth } from "next-auth/middleware"
+import { NextResponse } from "next/server"
+
+export default withAuth(
+  function middleware(req) {
+    const token = req.nextauth.token;
+    
+    if (!token) {
+      return NextResponse.redirect(new URL('/login', req.url));
+    }
+
+    return NextResponse.next();
+  },
+  {
+    callbacks: {
+      authorized: ({ token }) => !!token,
+    },
+  }
+)
+
+export const config = {
+  matcher: [
+    '/dashboard/:path*',
+    '/codes/:path*',
+    '/stakeholders/:path*',
+    '/server/:path*',
+    '/protected-route/:path*',
+    '/bible-chat/:path*',
+  ]
+}
+```
+
+4. Ensure your .env.local has the correct NextAuth configuration:
+
+```env
+NEXTAUTH_URL=http://172.29.38.191:3000
+NEXTAUTH_SECRET=your_nextauth_secret
+```
+
+5. Update dependencies:
+
+```bash
+# Remove Supabase auth dependencies
+npm uninstall @supabase/auth-helpers-nextjs
+
+# Ensure NextAuth dependencies are installed
+npm install next-auth@latest @next-auth/prisma-adapter bcryptjs
+```
+
+6. Clear browser data:
+- Clear your browser's cookies and local storage
+- Clear your browser cache
+
+7. Restart your development server:
+
+```bash
+npm run dev
+```
+
+## Note
+This reversion will:
+- Restore NextAuth.js authentication
+- Remove Supabase authentication
+- Keep your existing UI and components
+- Maintain your existing database connections
+- Preserve your protected routes
+
+## Troubleshooting
+
+If you encounter issues after reverting:
+
+1. Clear Next.js cache:
+```bash
+rm -rf .next
+```
+
+2. Reset node modules:
+```bash
+rm -rf node_modules
+npm install
+```
+
+3. Verify your database connection:
+```bash
+npx prisma generate
+```
+
+4. Check your session:
+```bash
+# Visit this endpoint in your browser
+http://localhost:3000/api/auth/session
+```
+
+For more information about the previous implementation, refer to the commit at `god-chat/12-23-2024-15-56`.
+
+# Git Restoration Guide
+
+### 1. Check Available References
+```bash
+# List all branches
+git branch -a
+
+# List all tags
+git tag -l
+```
+
+### 2. Safeguard Current Work
+```bash
+# Check status
+git status
+
+# Stash changes if needed
+git stash save "Saving changes before restoration"
+```
+
+### 3. Restoration Commands
+
+#### Option 1: Direct Checkout
+```bash
+# Checkout specific commit
+git checkout god-chat/12-23-2024-15-56
+
+# Create new branch from this point
+git checkout -b restore-branch
+```
+
+#### Option 2: Reset Current Branch
+```bash
+# Hard reset (warning: destructive)
+git reset --hard god-chat/12-23-2024-15-56
+
+# Force push if needed
+git push origin main --force
+```
+
+#### Option 3: Revert Changes
+```bash
+# Revert specific commits
+git revert <commit-sha>
+```
+
+### 4. Verify Restoration
+```bash
+# Check status
+git status
+
+# View current position
+git log --oneline --graph --decorate
+```
+
+### 5. Recovery Options
+```bash
+# Recover stashed changes
+git stash list
+git stash apply
+
+# Undo hard reset
+git reset --hard ORIG_HEAD
+```
+
+## Common Issues and Solutions
+
+### Reference Not Found
+```bash
+# Fetch all remote references
+git fetch --all
+
+# Check remote references
+git ls-remote origin
+```
+
+### Merge Conflicts
+```bash
+# Abort current merge
+git merge --abort
+
+# Start fresh
+git reset --hard HEAD
+```
+
+### Detached HEAD State
+```bash
+# Create new branch
+git checkout -b recovery-branch
+
+# Or return to main branch
+git checkout main
+```
+
+## Best Practices
+
+1. Always create a backup branch before major changes
+2. Use `git stash` to save uncommitted work
+3. Verify the target reference before restoration
+4. Test the application after restoration
+5. Document the restoration process
+
+For more detailed Git operations and recovery procedures, refer to the [Git documentation](https://git-scm.com/doc).
