@@ -19,54 +19,39 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { ThemeProvider } from 'next-themes'
+import { useTheme as useNextTheme, type Theme } from 'next-themes'
 
-interface UseThemeReturn {
-  theme: string | undefined;      // Current active theme
-  setTheme: (theme: string) => void;  // Function to change theme
-  systemTheme: string | undefined;     // Detected system theme
+interface ThemeContextType {
+  theme: Theme | undefined
+  setTheme: (theme: Theme) => void
+  systemTheme: string | undefined
+  resolvedTheme: Theme | undefined
+  themes: string[]
 }
 
-/**
- * Custom hook for theme management
- * 
- * @returns {UseThemeReturn} Object containing theme state and controls
- * 
- * Usage:
- * ```tsx
- * const { theme, setTheme } = useTheme();
- * // Use theme to conditionally render content
- * // Use setTheme to change theme: setTheme('dark') or setTheme('light')
- * ```
- */
-export function useTheme(): UseThemeReturn {
-  // Track whether component is mounted to prevent hydration mismatch
+export function useTheme(): ThemeContextType {
   const [mounted, setMounted] = useState(false)
-  
-  // Get theme controls from next-themes
-  // @ts-ignore - next-themes types are not properly exported
-  const { theme, setTheme, systemTheme } = ThemeProvider.useTheme()
+  const context = useNextTheme()
 
-  // Set mounted state after initial render
   useEffect(() => {
     setMounted(true)
   }, [])
 
-  // Return placeholder values before mount to prevent hydration mismatch
   if (!mounted) {
     return {
       theme: undefined,
-      setTheme: (theme: string) => {
-        if (mounted) setTheme(theme)
-      },
-      systemTheme: undefined
+      setTheme: () => undefined,
+      systemTheme: undefined,
+      resolvedTheme: undefined,
+      themes: []
     }
   }
 
-  // Return actual theme values after mount
   return {
-    theme,
-    setTheme,
-    systemTheme
+    theme: context.theme as Theme,
+    setTheme: context.setTheme,
+    systemTheme: context.systemTheme,
+    resolvedTheme: context.resolvedTheme as Theme,
+    themes: context.themes || ['light', 'dark', 'system']
   }
 } 

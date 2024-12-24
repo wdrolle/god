@@ -4,24 +4,12 @@
 
 import { PrismaClient } from '@prisma/client';
 
-declare global {
-  // Allow global `var` declarations to prevent multiple instances in development
-  // eslint-disable-next-line no-var
-  var prisma: PrismaClient | undefined;
-}
+const globalForPrisma = global as unknown as { prisma: PrismaClient };
 
-const prisma =
-  global.prisma ||
+export const prisma =
+  globalForPrisma.prisma ||
   new PrismaClient({
-    datasources: {
-      db: {
-        url: process.env.DIRECT_URL, // Ensure DIRECT_URL is set in your .env
-      },
-    },
-    log: ['query', 'info', 'warn', 'error'], // Optional: Enable logging for debugging
+    log: ['query'],
   });
 
-// Prevent multiple instances in development
-if (process.env.NODE_ENV !== 'production') global.prisma = prisma;
-
-export { prisma };
+if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
