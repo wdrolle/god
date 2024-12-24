@@ -29,7 +29,7 @@ import { useSession } from "next-auth/react";
 interface Message {
   role: "user" | "assistant";
   content: string;
-  created_at?: string;
+  created_at: string;
 }
 
 interface Conversation {
@@ -37,6 +37,7 @@ interface Conversation {
   title: string;
   created_at: string;
   updated_at: string;
+  god_chat_messages?: Message[];
 }
 
 // Add dynamic import for theme toggle
@@ -57,6 +58,7 @@ export default function BibleChatPage() {
   const [editTitle, setEditTitle] = useState("");
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const { data: session } = useSession();
+  const [firstName, setFirstName] = useState<string>("friend");
 
   // Fetch conversations on mount
   useEffect(() => {
@@ -70,18 +72,41 @@ export default function BibleChatPage() {
     }
   }, [currentConversation]);
 
+  // Add function to fetch user's name
+  const fetchUserName = async () => {
+    try {
+      const session = await getSession();
+      if (!session?.user?.id) return;
+
+      const response = await fetch("/api/user/profile");
+      if (response.ok) {
+        const data = await response.json();
+        setFirstName(data.first_name || "friend");
+      }
+    } catch (error) {
+      console.error("Error fetching user name:", error);
+    }
+  };
+
+  // Add to useEffect
+  useEffect(() => {
+    fetchUserName();
+  }, []);
+
   const fetchConversations = async () => {
     try {
       const session = await getSession();
       
       if (!session?.user?.id) {
-        throw new Error('No session found');
+        console.error('No session found');
+        return;
       }
 
       const response = await fetch("/api/chat/conversations", {
         headers: {
-          "Authorization": `Bearer ${session.user.id}`
-        }
+          "Content-Type": "application/json"
+        },
+        credentials: 'include'
       });
       
       if (!response.ok) {
@@ -90,10 +115,25 @@ export default function BibleChatPage() {
       
       const data = await response.json();
       setConversations(data);
+
+      // If there's a current conversation, set its messages
+      if (currentConversation) {
+        const currentConv = data.find((conv: Conversation) => conv.id === currentConversation);
+        if (currentConv?.god_chat_messages) {
+          setMessages(currentConv.god_chat_messages);
+        }
+      }
     } catch (error) {
       console.error('Error fetching conversations:', error);
     }
   };
+
+  // Add dependency to useEffect
+  useEffect(() => {
+    if (session?.user) {
+      fetchConversations();
+    }
+  }, [session]);
 
   const fetchMessages = async (conversationId: string) => {
     const response = await fetch(`/api/chat/messages/${conversationId}`);
@@ -161,69 +201,55 @@ export default function BibleChatPage() {
 
     const userMessage = input.trim();
     setInput("");
-    setMessages(prev => [...prev, { role: "user", content: userMessage }]);
+    
+    // Add user message to UI immediately
+    const userMessageWithTime: Message = {
+      role: "user",
+      content: userMessage,
+      created_at: new Date().toISOString()
+    };
+    setMessages(prev => [...prev, userMessageWithTime]);
+    
     setIsLoading(true);
 
     try {
-      const session = await getSession();
-      if (!session?.user) {
-        throw new Error('No session found');
-      }
-
       // Get or create conversation
       let chatId = currentConversation;
       if (!chatId) {
         const newConv = await createNewConversation();
-        if (!newConv) {
-          throw new Error('Failed to create conversation');
-        }
+        if (!newConv) throw new Error('Failed to create conversation');
         chatId = newConv.id;
+        setCurrentConversation(chatId);
       }
 
-      // Generate AI response using Ollama
-      const prompt = `${messages.map(msg => 
-        `${msg.role === 'user' ? 'Human' : 'Assistant'}: ${msg.content}`
-      ).join('\n')}
-      Human: ${userMessage}
-      Assistant:`;
-
-      const aiResponse = await generateResponse(prompt);
-
-      if (!aiResponse) {
-        throw new Error('Failed to generate response');
-      }
-
-      // Save messages to the conversation
-      await fetch("/api/chat/messages", {
+      // Get AI response
+      const response = await fetch("/api/bible-chat", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${session.user.id}`
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          conversation_id: chatId,
-          messages: [
-            {
-              role: "user",
-              content: userMessage,
-              created_at: new Date().toISOString()
-            },
-            {
-              role: "assistant",
-              content: aiResponse,
-              created_at: new Date().toISOString()
-            }
-          ]
+          message: userMessage,
+          conversationId: chatId
         })
       });
 
-      // Update UI with response
-      setMessages(prev => [...prev, { role: "assistant", content: aiResponse }]);
+      if (!response.ok) throw new Error('Failed to get AI response');
+      
+      const data = await response.json();
+      
+      // Add AI response to UI
+      const aiMessageWithTime: Message = {
+        role: "assistant",
+        content: data.message,
+        created_at: new Date().toISOString()
+      };
+      setMessages(prev => [...prev, aiMessageWithTime]);
+
     } catch (error) {
       console.error("Chat error:", error);
       setMessages(prev => [...prev, {
         role: "assistant",
-        content: "I apologize, but I'm having trouble responding right now. Please try again later."
+        content: "I apologize, but I'm having trouble responding right now. Please try again later.",
+        created_at: new Date().toISOString()
       }]);
     } finally {
       setIsLoading(false);
@@ -308,7 +334,7 @@ export default function BibleChatPage() {
               }`}
             >
               <div
-                className={`max-w-[80%] rounded-lg px-4 py-3 ${
+                className={`max-w-[95%] rounded-lg px-4 py-3 ${
                   message.role === "user"
                     ? "bg-gray-100 dark:bg-gray-700"
                     : "bg-gray-100 dark:bg-gray-700"

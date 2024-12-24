@@ -36,10 +36,18 @@ import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { generateResponse } from "@/lib/utils/ollama";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/lib/auth";
 
 // Force dynamic rendering and use Node.js runtime
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
+
+// Add this interface at the top of the file
+interface GodUser {
+  id: string;
+  first_name: string | null;
+}
 
 /**
  * POST Request Handler
@@ -67,72 +75,70 @@ export const runtime = 'nodejs';
  * }
  */
 export async function POST(req: Request) {
-  const supabase = createRouteHandlerClient({ cookies });
-
   try {
-    // Authentication check
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
+    const { message, conversationId } = await req.json();
+    const session = await getServerSession(authOptions);
+    
+    if (!session?.user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { message, conversationId } = await req.json();
-
-    // Conversation management
-    let activeConversationId = conversationId;
-    if (!activeConversationId) {
-      const conversation = await prisma.god_chat_conversations.create({
-        data: {
-          user_id: user.id,
-          title: "New Conversation",
-        },
-      });
-      activeConversationId = conversation.id;
-    }
-
-    // User preferences retrieval
-    const userData = await prisma.god_user_preferences.findUnique({
-      where: { user_id: user.id },
-      select: {
-        preferred_bible_version: true,
-        theme_preferences: true,
-        message_length_preference: true,
-        blocked_themes: true
-      }
+    // Get god_user using Prisma with explicit schema
+    const godUser = await prisma.god_users.findFirst({
+      where: { auth_user_id: session.user.id },
+      select: { id: true, first_name: true }
     });
 
-    // AI response generation
-    const bibleVersion = userData?.preferred_bible_version || 'NIV';
-    const prompt = `You are a helpful Christian AI assistant. Using the ${bibleVersion} Bible version, 
-      please provide guidance and biblical references for the following question: ${message}
-      Please include relevant Bible verses and their references.`;
+    if (!godUser) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
 
-    const aiResponse = await generateResponse(prompt);
+    // Generate AI response
+    const aiResponse = await generateResponse({
+      prompt: message,
+      firstName: godUser.first_name || "friend"
+    });
 
-    // Database transaction for message saving
+    const timestamp = new Date().toISOString();
+
+    // Save both messages in transaction
     await prisma.$transaction(async (tx) => {
       // Save user message
       await tx.god_chat_messages.create({
         data: {
-          conversation_id: activeConversationId,
+          conversation_id: conversationId,
           role: "user",
           content: message,
-        },
+          created_at: new Date(),
+          messages: [{
+            role: "user",
+            prompt: message,
+            content: message,
+            timestamp: timestamp
+          }]
+        }
       });
 
       // Save AI response
       await tx.god_chat_messages.create({
         data: {
-          conversation_id: activeConversationId,
+          conversation_id: conversationId,
           role: "assistant",
           content: aiResponse,
-        },
+          created_at: new Date(),
+          messages: [{
+            role: "assistant",
+            prompt: message,
+            content: aiResponse,
+            timestamp: timestamp
+          }]
+        }
       });
 
       // Update conversation timestamp
       await tx.god_chat_conversations.update({
-        where: { id: activeConversationId },
-        data: { updated_at: new Date() },
+        where: { id: conversationId },
+        data: { updated_at: new Date() }
       });
     });
 

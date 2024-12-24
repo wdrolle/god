@@ -10,7 +10,12 @@ export interface OllamaResponse {
   eval_duration: number;
 }
 
-export async function generateResponse(prompt: string): Promise<string> {
+interface OllamaProps {
+  prompt: string;
+  firstName?: string;
+}
+
+export async function generateResponse({ prompt, firstName = "friend" }: OllamaProps): Promise<string> {
   try {
     const response = await fetch("http://localhost:11434/api/generate", {
       method: "POST",
@@ -20,7 +25,7 @@ export async function generateResponse(prompt: string): Promise<string> {
       body: JSON.stringify({
         model: "llama3.2",
         prompt: `You are a wise and knowledgeable theologian, well-versed in biblical scripture, 
-        theological concepts, and spiritual guidance. Your responses should:
+        theological concepts, and spiritual guidance. Address the user as "${firstName}". Your responses should:
         
         1. Draw from biblical wisdom and scripture
         2. Provide thoughtful spiritual guidance

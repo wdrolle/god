@@ -20,7 +20,7 @@ export async function POST(req: Request) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "llama2",
+        model: "llama3.2",
         prompt: formatPrompt(prompt, previousMessages),
         temperature: temperature || 0.7,
         max_tokens: maxTokens || 2000,

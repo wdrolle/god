@@ -22,8 +22,8 @@ export async function generateMessage({
         prompt,
         conversationId,
         previousMessages,
-        model: "llama2", // Specify model
-        temperature: 0.7, // Add any model parameters
+        model: "llama3.2",
+        temperature: 0.7,
         maxTokens: 2000
       })
     });

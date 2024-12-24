@@ -36,13 +36,11 @@ import { NextResponse } from "next/server";
  */
 export default withAuth(
   function middleware(req) {
-    // Allow request to continue if authenticated
     return NextResponse.next();
   },
   {
     callbacks: {
-      // Only allow access if valid token exists
-      authorized: ({ token }) => !!token,
+      authorized: ({ token }) => !!token
     },
   }
 );
@@ -64,22 +62,7 @@ export default withAuth(
  */
 export const config = {
   matcher: [
-    // App routes
-    '/dashboard/:path*',
-    '/bible-chat/:path*',
-    '/settings/:path*',
-    '/profile/:path*',
-    '/messages/:path*',
-    
-    // API routes
-    '/api/auth/:path*',
     '/api/chat/:path*',
-    '/api/bible-chat/:path*',
-    '/api/settings/:path*',
-    '/api/profile/:path*',
-    '/api/messages/:path*',
-    '/api/protected/:path*',
-    '/api/generate-message/:path*',
     '/bible-chat/:path*'
   ]
 };

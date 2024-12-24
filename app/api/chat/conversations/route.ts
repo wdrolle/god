@@ -48,20 +48,17 @@ export const runtime = 'nodejs';
  * - 500: Server error
  */
 export async function GET(req: Request) {
-  const supabase = createRouteHandlerClient({ cookies });
-
   try {
-    // Authentication check using Supabase
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    const session = await getServerSession(authOptions);
     
-    if (authError || !user) {
+    if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Map auth user to god_users record
+    // Get god_user for the auth user
     const godUser = await prisma.god_users.findFirst({
       where: {
-        auth_user_id: user.id
+        auth_user_id: session.user.id
       }
     });
 
@@ -69,10 +66,17 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    // Fetch conversations ordered by most recent
+    // Fetch conversations with messages
     const conversations = await prisma.god_chat_conversations.findMany({
       where: {
         user_id: godUser.id
+      },
+      include: {
+        god_chat_messages: {
+          orderBy: {
+            created_at: 'asc'
+          }
+        }
       },
       orderBy: {
         updated_at: 'desc'
