@@ -240,7 +240,7 @@ export default function BibleChatPage() {
   };
 
   return (
-    <div className="w-full h-[calc(100vh-2rem)] flex gap-4 px-4 overflow-hidden">
+    <div className="w-full h-[calc(95vh-2rem)] flex gap-4 px-4 overflow-hidden">
       {/* Theme Toggle - Absolute positioned */}
       <div className="absolute top-4 right-4 z-50">
         <ThemeToggle />
@@ -351,6 +351,13 @@ export default function BibleChatPage() {
                 fullWidth
                 size="lg"
                 aria-label="Ask for guidance"
+                className="bg-transparent dark:bg-transparent"
+                classNames={{
+                  input: "px-4 py-2",
+                  inputWrapper: "bg-transparent dark:bg-transparent px-6 py-4"
+                }}
+                minRows={1}
+                maxRows={4}
               />
               <Button
                 type="submit"
@@ -369,23 +376,47 @@ export default function BibleChatPage() {
       </div>
 
       {/* Edit Title Modal */}
-      <Modal isOpen={isEditModalOpen} onClose={() => setIsEditModalOpen(false)}>
+      <Modal 
+        isOpen={isEditModalOpen} 
+        onClose={() => setIsEditModalOpen(false)}
+        classNames={{
+          base: "bg-white dark:bg-gray-800",
+          header: "text-gray-900 dark:text-gray-100",
+          body: "text-gray-700 dark:text-gray-300",
+          footer: "border-t border-gray-200 dark:border-gray-700",
+          closeButton: "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+        }}
+      >
         <ModalContent>
           {(onClose) => (
             <>
-              <ModalHeader>Edit Conversation Title</ModalHeader>
+              <ModalHeader className="border-b border-gray-200 dark:border-gray-700">
+                Edit Conversation Title
+              </ModalHeader>
               <ModalBody>
                 <Input
                   value={editTitle}
                   onChange={(e) => setEditTitle(e.target.value)}
                   placeholder="Enter new title"
+                  classNames={{
+                    input: "bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100",
+                    inputWrapper: "border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900"
+                  }}
                 />
               </ModalBody>
               <ModalFooter>
-                <Button variant="flat" onPress={onClose}>
+                <Button 
+                  variant="flat" 
+                  onPress={onClose}
+                  className="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300"
+                >
                   Cancel
                 </Button>
-                <Button color="primary" onPress={updateConversationTitle}>
+                <Button 
+                  color="primary" 
+                  onPress={updateConversationTitle}
+                  className="bg-blue-600 dark:bg-blue-500 text-white"
+                >
                   Save
                 </Button>
               </ModalFooter>
