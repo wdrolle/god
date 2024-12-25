@@ -121,26 +121,35 @@ export default function BibleChatPage() {
       });
       
       if (!response.ok) {
-        throw new Error('Failed to fetch conversations');
+        console.warn('Could not fetch conversations, starting fresh');
+        setConversations([]);
+        return;
       }
       
       const data = await response.json();
-      setConversations(data);
-
-      // Only fetch messages if we have a current conversation
-      if (currentConversation) {
-        const currentConv = data.find((conv: Conversation) => conv.id === currentConversation);
-        if (currentConv?.god_chat_messages) {
-          setMessages(currentConv.god_chat_messages);
+      
+      // Validate the data structure
+      if (Array.isArray(data)) {
+        setConversations(data);
+        
+        // Only fetch messages if we have a current conversation
+        if (currentConversation) {
+          const currentConv = data.find((conv: Conversation) => conv.id === currentConversation);
+          if (currentConv?.god_chat_messages) {
+            setMessages(currentConv.god_chat_messages);
+          }
         }
+      } else {
+        console.warn('Invalid conversations data format, starting fresh');
+        setConversations([]);
       }
     } catch (error) {
-      console.error('Error fetching conversations:', error);
-      toast.error('Failed to fetch conversations');
+      console.warn('Error fetching conversations, starting fresh:', error);
+      setConversations([]);
     }
   }, [session?.user, currentConversation]);
 
-  // Memoize fetchMessages to prevent unnecessary rerenders
+  // Update fetchMessages to handle errors silently
   const fetchMessages = useCallback(async (conversationId: string) => {
     if (!session?.user) return;
     
@@ -150,14 +159,23 @@ export default function BibleChatPage() {
       });
       
       if (!response.ok) {
-        throw new Error('Failed to fetch messages');
+        console.warn('Could not fetch messages, starting fresh');
+        setMessages([]);
+        return;
       }
       
       const data = await response.json();
-      setMessages(data);
+      
+      // Validate the data structure
+      if (Array.isArray(data)) {
+        setMessages(data);
+      } else {
+        console.warn('Invalid messages data format, starting fresh');
+        setMessages([]);
+      }
     } catch (error) {
-      console.error('Error fetching messages:', error);
-      toast.error('Failed to fetch messages');
+      console.warn('Error fetching messages, starting fresh:', error);
+      setMessages([]);
     }
   }, [session?.user]);
 
@@ -319,56 +337,72 @@ export default function BibleChatPage() {
     e.preventDefault();
     if (!input.trim() || isLoading) return;
 
-    const userMessage = input.trim();
-    setInput("");
-    
-    // Add user message to UI immediately
-    const userMessageWithTime: Message = {
-      role: "user",
-      content: userMessage,
-      created_at: new Date().toISOString()
-    };
-    setMessages(prev => [...prev, userMessageWithTime]);
-    
-    setIsLoading(true);
-
     try {
-      // Get or create conversation
-      let chatId = currentConversation;
-      if (!chatId) {
+      setIsLoading(true);
+
+      // Create new conversation if needed
+      if (!currentConversation) {
         const newConv = await createNewConversation();
-        if (!newConv) throw new Error('Failed to create conversation');
-        chatId = newConv.id;
-        setCurrentConversation(chatId);
+        if (!newConv) {
+          throw new Error('Failed to create conversation');
+        }
       }
 
+      // Add user message immediately
+      const userMessage: Message = {
+        role: "user",
+        content: input.trim(),
+        created_at: new Date().toISOString()
+      };
+      setMessages(prev => [...prev, userMessage]);
+      setInput("");
+
       // Get AI response
-      const response = await fetch("/api/bible-chat", {
+      const response = await fetch("/api/chat/messages", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({
-          message: userMessage,
-          conversationId: chatId
+          message: input.trim(),
+          conversationId: currentConversation
         })
       });
 
-      if (!response.ok) throw new Error('Failed to get AI response');
-      
       const data = await response.json();
       
-      // Add AI response to UI
-      const aiMessageWithTime: Message = {
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to get response');
+      }
+
+      if (!data.message) {
+        throw new Error('No message received from AI');
+      }
+
+      // Add AI response to messages
+      const aiMessage: Message = {
         role: "assistant",
         content: data.message,
         created_at: new Date().toISOString()
       };
-      setMessages(prev => [...prev, aiMessageWithTime]);
+      setMessages(prev => [...prev, aiMessage]);
 
     } catch (error) {
       console.error("Chat error:", error);
+      toast.error(error instanceof Error ? error.message : 'Failed to send message');
+      
+      const errorMessage = `
+### Error
+
+I apologize, but I'm having trouble responding right now. Please try again later.
+
+---
+*If this problem persists, please contact support.*
+      `.trim();
+
       setMessages(prev => [...prev, {
         role: "assistant",
-        content: "I apologize, but I'm having trouble responding right now. Please try again later.",
+        content: errorMessage,
         created_at: new Date().toISOString()
       }]);
     } finally {
@@ -414,157 +448,142 @@ export default function BibleChatPage() {
   };
 
   return (
-    <div className="w-full h-[calc(95vh-2rem)] flex gap-4 px-4 overflow-hidden">
-      {/* Theme Toggle - Absolute positioned */}
-      <div className="absolute top-4 right-4 z-50">
-        <ThemeToggle />
-      </div>
+    <div className="max-w-7xl mx-auto px-4 sm:px-2 lg:px-8 py-0">
+      {/* Chat Section */}
+      <div className="bg-card dark:bg-card rounded-lg shadow-sm p-8">
+        <h2 className="text-2xl font-semibold mb-4">
+          Bible Chat
+        </h2>
 
-      {/* Conversation Sidebar - Fixed width and full height */}
-      <div className="w-[250px] h-full bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4 overflow-y-auto">
-        {/* New Chat Button with Transparent Background and Theme-based Text */}
-        <Button
-          className={`mb-4 w-full bg-transparent 
-            ${theme === 'dark' ? 'text-white' : 'text-black'} 
-            hover:bg-gray-100 dark:hover:bg-gray-700
-          `}
-          variant="light"
-          startContent={<Plus />}
-          onPress={createNewConversation}
-        >
-          New Chat
-        </Button>
-
-        <div className="space-y-2">
-          {conversations.map((conv) => (
-            <div
-              key={conv.id}
-              className={`p-2 rounded-lg cursor-pointer flex items-center justify-between ${
-                currentConversation === conv.id
-                  ? "bg-primary/10 text-primary"
-                  : "hover:bg-gray-100 dark:hover:bg-gray-700"
-              }`}
-              onClick={() => setCurrentConversation(conv.id)}
+        <div className="grid grid-cols-12 gap-4">
+          {/* Conversation Sidebar */}
+          <div className="col-span-3 border-r border-gray-200 dark:border-gray-700 pr-4">
+            <Button
+              className="w-full mb-4 bg-primary text-primary-foreground hover:bg-primary/90"
+              onClick={createNewConversation}
             >
-              <div 
-                className="flex-1"
-                onClick={() => setCurrentConversation(conv.id)}
-              >
-                <div className="flex flex-col">
-                  <span className="font-medium truncate">{conv.title}</span>
-                  <span className="text-xs text-gray-500">
-                    {format(new Date(conv.created_at), "MMM d, yyyy h:mm a")}
-                  </span>
+              <Plus className="h-4 w-4 mr-2" />
+              New Chat
+            </Button>
+
+            <div className="space-y-2">
+              {conversations.map((conv) => (
+                <div
+                  key={conv.id}
+                  className={`p-3 rounded-lg cursor-pointer ${
+                    currentConversation === conv.id
+                      ? "bg-primary/10 text-primary"
+                      : "hover:bg-accent"
+                  }`}
+                  onClick={() => setCurrentConversation(conv.id)}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{conv.title}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {format(new Date(conv.created_at), "MMM d, yyyy")}
+                      </p>
+                    </div>
+                    {currentConversation === conv.id && (
+                      <div className="flex gap-1">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditTitle(conv.title);
+                            setIsEditModalOpen(true);
+                          }}
+                          className="p-1 hover:bg-accent rounded"
+                        >
+                          <Edit2 className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setConversationToDelete(conv.id);
+                            setIsDeleteDialogOpen(true);
+                          }}
+                          className="p-1 hover:bg-accent rounded text-red-500"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-              {currentConversation === conv.id && (
-                <div className="flex gap-2">
-                  <Button
-                    isIconOnly
-                    size="sm"
-                    variant="light"
-                    onPress={() => {
-                      setEditTitle(conv.title);
-                      setIsEditModalOpen(true);
-                    }}
-                  >
-                    <Edit2 className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    isIconOnly
-                    size="sm"
-                    variant="light"
-                    className="text-red-500 hover:text-red-600"
-                    onPress={() => {
-                      setConversationToDelete(conv.id);
-                      setIsDeleteDialogOpen(true);
-                    }}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              )}
+              ))}
             </div>
-          ))}
-        </div>
-      </div>
+          </div>
 
-      {/* Chat Area - Flex grow and full height */}
-      <div className="flex-1 h-full bg-white dark:bg-gray-800/95 rounded-lg shadow-sm flex flex-col">
-        {/* Messages - Scrollable area that takes remaining height */}
-        <div className="flex-1 min-h-0 overflow-y-auto p-6 space-y-4 markdown-body">
-          {messages.map((message, index) => (
-            <div
-              key={index}
-              className={`flex ${
-                message.role === "user" ? "justify-end" : "justify-start"
-              }`}
-            >
-              <div
-                className={`max-w-[95%] rounded-lg px-4 py-3 ${
-                  message.role === "user"
-                    ? "bg-gray-100 dark:bg-gray-700"
-                    : "bg-gray-100 dark:bg-gray-700"
-                } shadow-sm`}
-              >
-                {message.role === "assistant" ? (
+          {/* Chat Messages */}
+          <div className="col-span-9 flex flex-col h-[calc(80vh-2rem)]">
+            <div className="flex-1 overflow-y-auto px-4 space-y-4">
+              {messages.map((message, index) => (
+                <div
+                  key={index}
+                  className={`flex ${
+                    message.role === "user" ? "justify-end" : "justify-start"
+                  }`}
+                >
                   <div
-                    className="markdown-content prose dark:prose-invert"
-                    dangerouslySetInnerHTML={{
-                      __html: marked(message.content, {
-                        breaks: true,
-                        gfm: true
-                      })
-                    }}
-                  />
-                ) : (
-                  <div className="text-gray-900 dark:text-gray-100">
-                    {message.content}
+                    className={`max-w-[80%] rounded-lg px-4 py-2 ${
+                      message.role === "user"
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-muted"
+                    }`}
+                  >
+                    {message.role === "assistant" ? (
+                      <div
+                        className="prose dark:prose-invert max-w-none"
+                        dangerouslySetInnerHTML={{
+                          __html: marked(message.content, {
+                            breaks: true,
+                            gfm: true,
+                            smartLists: true,
+                            smartypants: true
+                          })
+                        }}
+                      />
+                    ) : (
+                      <div className="whitespace-pre-wrap">{message.content}</div>
+                    )}
+                    <div className="text-xs opacity-70 mt-1">
+                      {format(new Date(message.created_at), "h:mm a")}
+                    </div>
                   </div>
-                )}
-                {message.created_at && (
-                  <div className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-                    {format(new Date(message.created_at), "h:mm a")}
-                  </div>
-                )}
-              </div>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
 
-        {/* Input form - Fixed height at bottom */}
-        <div className="border-t dark:border-gray-700/50 bg-white/10 dark:bg-gray-900/50 p-4 mt-auto">
-          <form onSubmit={handleSubmit} className="max-w-5xl mx-auto">
-            <div className="flex items-center gap-2">
-              <StyledInput
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder="Ask for guidance..."
-                isClearable
-                fullWidth
-                size="lg"
-                aria-label="Ask for guidance"
-                className="bg-transparent dark:bg-transparent"
-                classNames={{
-                  input: "px-4 py-2",
-                  inputWrapper: "bg-transparent dark:bg-transparent px-6 py-4"
-                }}
-                minRows={1}
-                maxRows={4}
-              />
-              <Button
-                type="submit"
-                isLoading={isLoading}
-                className="bg-transparent hover:bg-blue-500/10 
-                  dark:hover:bg-blue-600/20 text-blue-600 dark:text-blue-400
-                  h-12 px-4 min-w-[120px] flex items-center justify-center gap-2"
-                aria-label="Send message"
-              >
-                <Send className="h-5 w-5" />
-                <span>Send</span>
-              </Button>
+            {/* Chat Input */}
+            <div className="border-t border-gray-200 dark:border-gray-700 pt-4 mt-4">
+              <form onSubmit={handleSubmit} className="flex gap-2">
+                <Input
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  placeholder="Type your message..."
+                  className="flex-1"
+                  disabled={isLoading}
+                />
+                <Button 
+                  type="submit" 
+                  disabled={isLoading}
+                  className="bg-primary text-primary-foreground hover:bg-primary/90"
+                >
+                  {isLoading ? (
+                    <span className="flex items-center">
+                      <Clock className="animate-spin h-4 w-4 mr-2" />
+                      Sending...
+                    </span>
+                  ) : (
+                    <span className="flex items-center">
+                      <Send className="h-4 w-4 mr-2" />
+                      Send
+                    </span>
+                  )}
+                </Button>
+              </form>
             </div>
-          </form>
+          </div>
         </div>
       </div>
 

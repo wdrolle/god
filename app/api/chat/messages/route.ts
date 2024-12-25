@@ -3,63 +3,76 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
-interface ChatMessage {
-  role: "user" | "assistant";
-  content: string;
-  created_at: string;
-}
-
-interface MessageRequest {
-  conversation_id: string;
-  messages: ChatMessage[];
-}
-
 export async function POST(req: Request) {
   try {
     const session = await getServerSession(authOptions);
-    
     if (!session?.user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { conversation_id, messages }: MessageRequest = await req.json();
-
-    // Verify user owns the conversation
-    const conversation = await prisma.god_chat_conversations.findFirst({
-      where: {
-        id: conversation_id,
-        user_id: session.user.id
-      }
+    const { message, conversationId } = await req.json();
+    
+    // Get AI response from generate-message endpoint
+    const response = await fetch('http://localhost:3000/api/generate-message', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        prompt: `Create an inspiring spiritual message about ${message}. Include a relevant Bible verse.`,
+        themeId: 'faith'
+      })
     });
 
-    if (!conversation) {
-      return NextResponse.json({ error: "Conversation not found" }, { status: 404 });
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Failed to generate message in the chat message route.');
     }
 
-    // Save messages in transaction
-    const savedMessages = await prisma.$transaction(async (tx) => {
-      const results = [];
-      
-      for (const msg of messages) {
-        const saved = await tx.god_chat_messages.create({
-          data: {
-            conversation_id,
-            role: msg.role,
-            content: msg.content,
-            created_at: new Date(msg.created_at)
-          }
-        });
-        results.push(saved as any);
+    const data = await response.json();
+    
+    if (!data.message) {
+      throw new Error('No message received from AI');
+    }
+
+    // Format the response in markdown
+    const formattedResponse = `
+### Divine Guidance
+
+${data.message}
+
+---
+*Walking with you in faith 🙏*
+    `.trim();
+
+    // Save both messages to database
+    await prisma.god_chat_messages.create({
+      data: {
+        conversation_id: conversationId,
+        role: 'user',
+        content: message,
+        created_at: new Date()
       }
-      
-      return results;
     });
 
-    return NextResponse.json(savedMessages);
+    const savedAiMessage = await prisma.god_chat_messages.create({
+      data: {
+        conversation_id: conversationId,
+        role: 'assistant',
+        content: formattedResponse,
+        created_at: new Date()
+      }
+    });
+
+    return NextResponse.json({ 
+      message: formattedResponse,
+      messageId: savedAiMessage.id
+    });
+
   } catch (error) {
-    console.error('Error saving messages:', error);
+    console.error('Error in chat route:', error);
     return NextResponse.json(
-      { error: "Failed to save messages" },
+      { error: error instanceof Error ? error.message : 'Failed to process chat message' },
       { status: 500 }
     );
   }

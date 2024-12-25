@@ -40,8 +40,8 @@ export default function AdminPage() {
   const [isGenerating, setIsGenerating] = useState(false)
 
   const generateMessage = async () => {
-    setIsGenerating(true)
-    setError('')
+    setIsGenerating(true);
+    setError('');
     
     try {
       const response = await fetch('/api/generate-message', {
@@ -53,22 +53,26 @@ export default function AdminPage() {
           prompt: selectedTheme.prompt,
           themeId: selectedTheme.id
         }),
-      })
+      });
 
-      const data = await response.json()
+      const data = await response.json();
       
-      if (data.success) {
-        setGeneratedMessage(data.message)
-      } else {
-        setError(data.error || 'Failed to generate message')
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to generate message');
       }
+      
+      if (!data.success || !data.message) {
+        throw new Error('No message received from AI');
+      }
+
+      setGeneratedMessage(data.message);
     } catch (error) {
-      setError('Error generating message')
-      console.error(error)
+      console.error('Error generating message:', error);
+      setError(error instanceof Error ? error.message : 'Failed to generate message');
     } finally {
-      setIsGenerating(false)
+      setIsGenerating(false);
     }
-  }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
