@@ -2,8 +2,9 @@
 // This file is used to handle the utils
 // It is used to handle the class names and the theme toggle
 
-type ClassValue = string | number | boolean | undefined | null | { [key: string]: boolean };
+import { type ClassValue, clsx } from "clsx";
+import { twMerge } from "tailwind-merge";
 
-export function cn(...classes: ClassValue[]) {
-  return classes.filter(Boolean).join(' ');
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
 } 

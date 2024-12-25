@@ -2,30 +2,65 @@
 
 'use client';
 
-import { Textarea } from "@nextui-org/react";
-import { useTheme } from 'next-themes';
+/**
+ * Styled Input Component
+ * 
+ * Purpose:
+ * - Provides a themed, customizable textarea input component
+ * - Adapts styling based on current theme (light/dark)
+ * - Built on top of NextUI's Textarea component with custom styling
+ * 
+ * Used By:
+ * - bible-chat/page.tsx (For chat input)
+ * - Any form or input area needing themed text input
+ * 
+ * How to Use:
+ * 1. Basic usage:
+ *    <StyledInput
+ *      value={inputValue}
+ *      onChange={(e) => setInputValue(e.target.value)}
+ *      placeholder="Type something..."
+ *    />
+ * 
+ * 2. With custom styling:
+ *    <StyledInput
+ *      className="custom-class"
+ *      classNames={{
+ *        input: "custom-input",
+ *        inputWrapper: "custom-wrapper"
+ *      }}
+ *      minRows={2}
+ *      maxRows={4}
+ *    />
+ */
 
+import { Textarea } from "@nextui-org/react";
+import { useTheme } from "@/lib/theme-provider";
+
+// Props interface for the StyledInput component
 interface StyledInputProps {
-  value: string;
-  onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => void;
-  placeholder?: string;
-  className?: string;
-  classNames?: {
+  value: string;                // Current input value
+  onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => void;  // Change handler
+  placeholder?: string;         // Optional placeholder text
+  className?: string;          // Optional container class
+  classNames?: {              // Optional class names for subcomponents
     input?: string;
     inputWrapper?: string;
     [key: string]: string | undefined;
   };
-  isClearable?: boolean;
-  fullWidth?: boolean;
-  size?: "sm" | "md" | "lg";
-  "aria-label"?: string;
-  minRows?: number;
-  maxRows?: number;
+  isClearable?: boolean;      // Whether to show clear button
+  fullWidth?: boolean;        // Whether to take full width
+  size?: "sm" | "md" | "lg";  // Input size variant
+  "aria-label"?: string;      // Accessibility label
+  minRows?: number;           // Minimum number of rows
+  maxRows?: number;           // Maximum number of rows
 }
 
 export function StyledInput(props: StyledInputProps) {
-  const { theme } = useTheme();
+  // Get current theme from context
+  const { resolvedTheme: theme } = useTheme();
   
+  // Construct base classes with theme-aware styling
   const baseClasses = `
     flex-1 
     min-h-[80px] 
@@ -50,9 +85,9 @@ export function StyledInput(props: StyledInputProps) {
       {...props}
       className={baseClasses}
       classNames={{
-        input: "px-4 py-2",
-        inputWrapper: "bg-transparent dark:bg-transparent",
-        ...(props.classNames || {})
+        input: "px-4 py-2",                           // Input padding
+        inputWrapper: "bg-transparent dark:bg-transparent",  // Wrapper background
+        ...(props.classNames || {})                   // Custom classNames override
       }}
       minRows={props.minRows || 1}
       maxRows={props.maxRows || 4}

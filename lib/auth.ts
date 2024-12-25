@@ -20,7 +20,7 @@
  * 5. Handles password comparison and user validation
  */
 
-import { NextAuthOptions } from "next-auth";
+import { AuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { PrismaAdapter } from "@next-auth/prisma-adapter";
 import { prisma } from "./prisma";
@@ -43,10 +43,11 @@ declare module "next-auth" {
   }
 }
 
-export const authOptions: NextAuthOptions = {
+export const authOptions: AuthOptions = {
   adapter: PrismaAdapter(prisma),
   session: {
     strategy: "jwt",
+    maxAge: 30 * 24 * 60 * 60, // 30 days
   },
   providers: [
     CredentialsProvider({
@@ -85,18 +86,34 @@ export const authOptions: NextAuthOptions = {
     })
   ],
   callbacks: {
-    session: ({ session, token }) => ({
-      ...session,
-      user: {
-        ...session.user,
-        id: token.sub
+    async session({ session, token }) {
+      if (token && session.user) {
+        session.user = {
+          id: token.sub as string,
+          email: token.email as string,
+          name: token.name as string,
+        };
       }
-    }),
-    jwt: ({ token, user }) => {
+      return session;
+    },
+    async jwt({ token, user }) {
       if (user) {
         token.sub = user.id;
+        token.email = user.email;
+        token.name = user.name || user.email;
       }
       return token;
+    }
+  },
+  pages: {
+    signIn: '/auth/signin',
+  },
+  debug: process.env.NODE_ENV === 'development',
+  events: {
+    async signIn({ user, account, profile, isNewUser }) {
+      if (process.env.NODE_ENV === 'development') {
+        console.log('Sign in event:', { user, isNewUser });
+      }
     }
   }
 };

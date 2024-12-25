@@ -4,43 +4,41 @@
 // Handles getting the dashboard data
 
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 
 export async function GET() {
-  const session = await getServerSession();
-  
-  if (!session?.user) {
-    return new NextResponse(JSON.stringify({ error: 'Unauthorized' }), {
-      status: 401,
-    });
-  }
-
   try {
-    // TODO: Replace with actual database query
-    const userData = {
-      id: session.user.id,
-      email: session.user.email,
-      first_name: "John",
-      last_name: "Doe",
-      phone_number: "+1234567890",
-      phone_country: "US",
-      subscription: {
-        status: "active",
-        preferred_time: "09:00",
-        next_message_at: new Date().toISOString(),
-      },
-      preferences: {
-        theme_preferences: ["faith"],
-        preferred_bible_version: "NIV",
-        message_length_preference: "MEDIUM",
-      },
-    };
+    const session = await getServerSession(authOptions);
 
-    return NextResponse.json(userData);
-  } catch (error) {
-    console.error('Dashboard API error:', error);
-    return new NextResponse(JSON.stringify({ error: 'Internal Server Error' }), {
-      status: 500,
+    if (!session?.user?.email) {
+      return new NextResponse("Unauthorized", { status: 401 });
+    }
+
+    const user = await prisma.god_users.findUnique({
+      where: {
+        email: session.user.email
+      },
+      select: {
+        id: true,
+        email: true,
+        first_name: true,
+        last_name: true,
+        phone: true,
+        subscription_status: true,
+        created_at: true,
+        god_user_preferences: true
+      }
     });
+
+    if (!user) {
+      return new NextResponse("User not found", { status: 404 });
+    }
+
+    return NextResponse.json(user);
+  } catch (error) {
+    console.error("[DASHBOARD_GET]", error);
+    return new NextResponse("Internal Error", { status: 500 });
   }
 } 

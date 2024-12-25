@@ -1,7 +1,7 @@
 {
   "compilerOptions": {
     "module": "commonjs",
-    "target": "es5",
+    "target": "es2015",
     "lib": [
       "dom",
       "dom.iterable",
@@ -34,7 +34,9 @@
       }
     ],
     "types": [
-      "node"
+      "node",
+      "react",
+      "react-dom"
     ]
   },
   "include": [

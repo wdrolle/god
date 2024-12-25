@@ -21,49 +21,134 @@
  * 4. Secure API endpoints
  */
 
-import { withAuth } from "next-auth/middleware";
-import { NextResponse } from "next/server";
+import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
+import { getToken } from 'next-auth/jwt';
 
-/**
- * NextAuth Middleware Configuration
- * 
- * withAuth wraps our middleware to provide authentication checks.
- * It automatically:
- * 1. Verifies JWT tokens
- * 2. Handles unauthorized access
- * 3. Manages redirects to login
- * 4. Protects specified routes
- */
-export default withAuth(
-  function middleware(req) {
-    return NextResponse.next();
-  },
-  {
-    callbacks: {
-      authorized: ({ token }) => !!token
-    },
+// Cache tokens with a TTL
+const tokenCache = new Map<string, { token: any; timestamp: number }>();
+const requestCache = new Map<string, { timestamp: number }>();
+
+const CACHE_TTL = 60 * 1000; // 1 minute
+const REQUEST_THROTTLE = 1000; // 1 second between same requests
+const REQUEST_TIMEOUT = 5000; // 5 seconds
+
+export async function middleware(request: NextRequest) {
+  const isDev = process.env.NODE_ENV === 'development';
+  const requestKey = request.url;
+  const now = Date.now();
+
+  // Check request throttling
+  const lastRequest = requestCache.get(requestKey);
+  if (lastRequest && (now - lastRequest.timestamp) < REQUEST_THROTTLE) {
+    return new NextResponse(
+      JSON.stringify({ error: 'Too many requests' }),
+      { 
+        status: 429,
+        headers: {
+          'Content-Type': 'application/json',
+          'Retry-After': '1'
+        }
+      }
+    );
   }
-);
+  
+  // Update last request timestamp
+  requestCache.set(requestKey, { timestamp: now });
 
-/**
- * Route Configuration
- * 
- * Specifies which routes require authentication.
- * Format: path/:path* protects all nested routes
- * 
- * Protected Routes:
- * - /dashboard/*     : All dashboard pages and features
- * - /api/auth/*      : Authentication API endpoints
- * - /bible-chat/*    : Bible chat feature and API
- * - /settings/*      : User settings pages
- * - /profile/*       : User profile pages
- * - /messages/*      : Messaging features
- * - /api/protected/* : Protected API endpoints
- */
+  try {
+    if (request.nextUrl.pathname.startsWith('/api/')) {
+      // Generate cache key from request
+      const cacheKey = `${request.url}-${request.headers.get('authorization')}`;
+      
+      // Check token cache
+      const cached = tokenCache.get(cacheKey);
+      if (cached && (now - cached.timestamp) < CACHE_TTL) {
+        // Only log cache hits in development when debugging
+        if (isDev && process.env.DEBUG_AUTH === 'true') {
+          console.log('DEBUG: Using cached token for:', request.nextUrl.pathname);
+        }
+        
+        if (!cached.token) {
+          return new NextResponse(
+            JSON.stringify({ error: 'Unauthorized' }),
+            { status: 401, headers: { 'Content-Type': 'application/json' } }
+          );
+        }
+        return NextResponse.next();
+      }
+
+      try {
+        const token = await Promise.race([
+          getToken({ 
+            req: request,
+            secret: process.env.NEXTAUTH_SECRET
+          }),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Auth check timeout')), REQUEST_TIMEOUT)
+          )
+        ]);
+        
+        // Cache the result
+        tokenCache.set(cacheKey, { token, timestamp: now });
+        
+        if (!token) {
+          return new NextResponse(
+            JSON.stringify({ error: 'Unauthorized' }),
+            { status: 401, headers: { 'Content-Type': 'application/json' } }
+          );
+        }
+
+        return NextResponse.next();
+      } catch (error) {
+        console.error('Auth check error:', error);
+        return new NextResponse(
+          JSON.stringify({ 
+            error: 'Auth check failed',
+            details: error instanceof Error ? error.message : 'Unknown error'
+          }),
+          { status: 500, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+    }
+    
+    return NextResponse.next();
+  } catch (error) {
+    console.error('Middleware error:', error);
+    return new NextResponse(
+      JSON.stringify({ 
+        error: 'Internal Server Error',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      }),
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
+    );
+  }
+}
+
+// Clean up expired cache entries periodically
+setInterval(() => {
+  const now = Date.now();
+  
+  // Fix for tokenCache iteration
+  Array.from(tokenCache.entries()).forEach(([key, value]) => {
+    if (now - value.timestamp > CACHE_TTL) {
+      tokenCache.delete(key);
+    }
+  });
+
+  // Fix for requestCache iteration
+  Array.from(requestCache.entries()).forEach(([key, value]) => {
+    if (now - value.timestamp > REQUEST_THROTTLE) {
+      requestCache.delete(key);
+    }
+  });
+}, 10000);
+
 export const config = {
   matcher: [
     '/api/chat/:path*',
-    '/bible-chat/:path*'
+    '/api/bible-chat/:path*',
+    '/api/user/:path*'
   ]
 };
 
