@@ -1,0 +1,32 @@
+/* Add these styles to your globals.css */
+.prose {
+  @apply text-foreground;
+}
+
+.prose pre {
+  @apply bg-muted p-4 rounded-lg overflow-x-auto;
+}
+
+.prose code {
+  @apply bg-muted px-1 py-0.5 rounded;
+}
+
+.prose blockquote {
+  @apply border-l-4 border-primary pl-4 italic;
+}
+
+.prose ul {
+  @apply list-disc list-inside;
+}
+
+.prose ol {
+  @apply list-decimal list-inside;
+}
+
+.prose a {
+  @apply text-primary hover:underline;
+}
+
+.prose h1, .prose h2, .prose h3, .prose h4 {
+  @apply text-foreground font-semibold;
+} 

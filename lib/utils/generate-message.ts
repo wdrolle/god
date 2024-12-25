@@ -29,7 +29,7 @@ export async function generateMessage({
     });
 
     if (!response.ok) {
-      throw new Error('Failed to generate message');
+      throw new Error('Failed to generate message in the utils generate message file.');
     }
 
     const data = await response.json();
