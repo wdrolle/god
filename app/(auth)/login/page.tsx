@@ -5,7 +5,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -42,9 +42,30 @@ const loginSchema = z.object({
 type LoginFormData = z.infer<typeof loginSchema>;
 
 export default function LoginPage() {
-  const [error, setError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const urlError = searchParams.get('error');
+  const success = searchParams.get('success');
+
+  let statusMessage = null;
+  if (urlError === 'invalid-token') {
+    statusMessage = {
+      type: 'error',
+      message: 'The confirmation link is invalid or has expired. Please try signing up again.'
+    };
+  } else if (urlError === 'confirmation-failed') {
+    statusMessage = {
+      type: 'error',
+      message: 'Failed to confirm your email. Please try again or contact support.'
+    };
+  } else if (success === 'email-confirmed') {
+    statusMessage = {
+      type: 'success',
+      message: 'Your email has been confirmed! You can now log in.'
+    };
+  }
 
   const form = useForm<LoginFormData>({
     resolver: zodResolver(loginSchema),
@@ -56,7 +77,7 @@ export default function LoginPage() {
 
   const handleSubmit = (data: LoginFormData) => {
     setIsLoading(true);
-    setError(null);
+    setFormError(null);
 
     signIn("credentials", {
       email: data.email.toLowerCase(),
@@ -77,7 +98,7 @@ export default function LoginPage() {
     })
     .catch((err) => {
       console.error('Login error:', err);
-      setError(err instanceof Error ? err.message : 'Failed to sign in');
+      setFormError(err instanceof Error ? err.message : 'Failed to sign in');
       toast.error('Failed to sign in. Please check your credentials.');
     })
     .finally(() => {
@@ -93,6 +114,16 @@ export default function LoginPage() {
         </div>
 
         <div className="w-full max-w-[400px] space-y-6 bg-transparent">
+          {statusMessage && (
+            <div className={`p-4 rounded-md ${
+              statusMessage.type === 'error' 
+                ? 'bg-red-50 text-red-700 border border-red-200' 
+                : 'bg-green-50 text-green-700 border border-green-200'
+            }`}>
+              <p className="text-sm">{statusMessage.message}</p>
+            </div>
+          )}
+
           <div className="flex flex-col items-center space-y-4">
             <Image
               src={Logo}
@@ -154,11 +185,11 @@ export default function LoginPage() {
               )}
             />
 
-            {error && (
-              <p className="text-sm text-red-500 text-center">{error}</p>
+            {formError && (
+              <p className="text-sm text-red-500 text-center">{formError}</p>
             )}
 
-            {error && error.includes('confirm your email') && (
+            {formError && formError.includes('confirm your email') && (
               <Button
                 type="button"
                 variant="light"

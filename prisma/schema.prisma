@@ -246,6 +246,8 @@ model users {
   aud                         String?           @db.VarChar(255)
   role                        String?           @db.VarChar(255)
   email                       String?           @unique @db.VarChar(255)
+  first_name                  String?           @db.VarChar(255)
+  last_name                   String?           @db.VarChar(255)
   encrypted_password          String?           @db.VarChar(255)
   email_confirmed_at          DateTime?         @db.Timestamptz(6)
   invited_at                  DateTime?         @db.Timestamptz(6)
@@ -261,7 +263,7 @@ model users {
   raw_user_meta_data          Json?
   is_super_admin              Boolean?
   created_at                  DateTime?         @default(dbgenerated("(now() AT TIME ZONE 'utc+4'::text)")) @db.Timestamptz(6)
-  updated_at                  DateTime?         @default(dbgenerated("(now() AT TIME ZONE 'utc+4'::text)")) @db.Timestamptz(6)
+  updated_at                  DateTime?         @default(dbgenerated("(now() AT TIME ZONE 'utc+4'::text)")) @updatedAt @db.Timestamptz(6)
   phone                       String?           @unique @db.VarChar(255)
   phone_confirmed_at          DateTime?         @db.Timestamptz(6)
   phone_change                String?           @default("") @db.VarChar(255)
@@ -330,7 +332,6 @@ model god_chat_conversations {
   god_users         god_users           @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   god_chat_messages god_chat_messages[]
 
-  @@index([user_id])
   @@schema("god")
 }
 
@@ -482,7 +483,7 @@ model god_users {
   god_sent_messages      god_sent_messages[]
   god_subscriptions      god_subscriptions[]
   god_user_preferences   god_user_preferences?
-  users                  users?                    @relation(fields: [auth_user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users                  users?                    @relation(fields: [auth_user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([auth_user_id], map: "idx_god_users_auth_user_id")
   @@index([email], map: "idx_god_users_email")
