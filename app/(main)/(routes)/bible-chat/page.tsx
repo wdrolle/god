@@ -1,10 +1,8 @@
 // app/(main)/(routes)/bible-chat/page.tsx
-// Updated to use transparent backgrounds for buttons and user text bubble,
-// while keeping dark/light theme-aware text colors. AI responses still use markdown.
 
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   Button,
   Dropdown,
@@ -13,7 +11,8 @@ import {
   ModalContent,
   ModalHeader,
   ModalBody,
-  ModalFooter
+  ModalFooter,
+  Textarea
 } from "@nextui-org/react";
 import { Send, Edit2, Clock, Plus, Trash2 } from "lucide-react";
 import { format } from "date-fns";
@@ -25,7 +24,7 @@ import dynamic from "next/dynamic";
 import { generateResponse } from "@/lib/utils/ollama";
 import { getSession } from "next-auth/react";
 import { useSession } from "next-auth/react";
-import { toast } from "react-hot-toast";
+import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import {
   AlertDialog,
@@ -37,6 +36,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { clsx } from "clsx";
 
 interface Message {
   role: "user" | "assistant";
@@ -74,141 +74,149 @@ export default function BibleChatPage() {
   const router = useRouter();
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [conversationToDelete, setConversationToDelete] = useState<string | null>(null);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [isTyping, setIsTyping] = useState(false);
+  const [displayedResponse, setDisplayedResponse] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const hasLoadedRef = useRef<{ [key: string]: boolean }>({});
+  const rateLimitRef = useRef<{ [key: string]: boolean }>({});
+  const [shouldRefresh, setShouldRefresh] = useState(false);
+  const [isInitialized, setIsInitialized] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [isMessageLoading, setIsMessageLoading] = useState(false);
+  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
 
-  // Fetch conversations on mount
-  useEffect(() => {
-    fetchConversations();
-  }, []);
+  // Separate data fetching functions
+  const fetchConversationData = async (page = 1) => {
+    const response = await fetch(`/api/chat/conversations?page=${page}`, {
+      headers: {
+        "Content-Type": "application/json"
+      },
+      credentials: 'include'
+    });
 
-  // Fetch messages when conversation changes
-  useEffect(() => {
-    if (currentConversation) {
-      fetchMessages(currentConversation);
+    if (!response.ok) {
+      throw new Error(response.status === 429 ? 'Rate limit reached' : 'Failed to load conversations');
     }
-  }, [currentConversation]);
 
-  // Add function to fetch user's name
-  const fetchUserName = async () => {
-    try {
-      const session = await getSession();
-      if (!session?.user?.id) return;
-
-      const response = await fetch("/api/user/profile");
-      if (response.ok) {
-        const data = await response.json();
-        setFirstName(data.first_name || "friend");
-      }
-    } catch (error) {
-      console.error("Error fetching user name:", error);
-    }
+    return {
+      data: await response.json(),
+      totalCount: parseInt(response.headers.get('X-Total-Count') || '0'),
+      pageCount: parseInt(response.headers.get('X-Page-Count') || '1'),
+      currentPage: parseInt(response.headers.get('X-Current-Page') || '1')
+    };
   };
 
-  // Add to useEffect
-  useEffect(() => {
-    fetchUserName();
-  }, []);
+  const fetchMessageData = async (conversationId: string) => {
+    const response = await fetch(`/api/chat/messages/${conversationId}`, {
+      credentials: 'include'
+    });
 
-  // Memoize fetchConversations to prevent unnecessary rerenders
-  const fetchConversations = useCallback(async () => {
-    if (!session?.user) return;
-    
-    try {
-      const response = await fetch("/api/chat/conversations", {
-        headers: {
-          "Content-Type": "application/json"
-        },
-        credentials: 'include'
-      });
-      
-      if (!response.ok) {
-        console.warn('Could not fetch conversations, starting fresh');
-        setConversations([]);
-        return;
-      }
-      
-      const data = await response.json();
-      
-      // Validate the data structure
-      if (Array.isArray(data)) {
-        setConversations(data);
-        
-        // Only fetch messages if we have a current conversation
-        if (currentConversation) {
-          const currentConv = data.find((conv: Conversation) => conv.id === currentConversation);
-          if (currentConv?.god_chat_messages) {
-            setMessages(currentConv.god_chat_messages);
-          }
-        }
-      } else {
-        console.warn('Invalid conversations data format, starting fresh');
-        setConversations([]);
-      }
-    } catch (error) {
-      console.warn('Error fetching conversations, starting fresh:', error);
-      setConversations([]);
+    if (!response.ok) {
+      throw new Error(response.status === 429 ? 'Rate limit reached' : 'Failed to fetch messages');
     }
-  }, [session?.user, currentConversation]);
 
-  // Update fetchMessages to handle errors silently
+    return await response.json();
+  };
+
+  // Declare fetchMessages before useEffect
   const fetchMessages = useCallback(async (conversationId: string) => {
-    if (!session?.user) return;
-    
+    if (!session?.user || hasLoadedRef.current[conversationId] || rateLimitRef.current[conversationId]) return;
+
     try {
-      const response = await fetch(`/api/chat/messages/${conversationId}`, {
-        credentials: 'include'
-      });
-      
-      if (!response.ok) {
-        console.warn('Could not fetch messages, starting fresh');
-        setMessages([]);
-        return;
-      }
-      
-      const data = await response.json();
-      
-      // Validate the data structure
+      setIsHistoryLoading(true);
+      const data = await fetchMessageData(conversationId);
+
       if (Array.isArray(data)) {
-        setMessages(data);
-      } else {
-        console.warn('Invalid messages data format, starting fresh');
-        setMessages([]);
+        const combinedMessages: Message[] = data.map(msg => ({
+          role: msg.role,
+          content: msg.content,
+          created_at: msg.created_at
+        })).sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+
+        setMessages(combinedMessages);
+        hasLoadedRef.current[conversationId] = true;
       }
-    } catch (error) {
-      console.warn('Error fetching messages, starting fresh:', error);
-      setMessages([]);
+    } catch (error: any) {
+      console.error('Error fetching messages:', error);
+      if (error.message === 'Rate limit reached') {
+        rateLimitRef.current[conversationId] = true;
+        toast.error('Too Many Requests. Please try again later.');
+      } else {
+        setMessages([]);
+        toast.error(error.message || 'Failed to fetch messages.');
+      }
+    } finally {
+      setIsHistoryLoading(false);
     }
   }, [session?.user]);
 
-  // Update useEffect to handle session and loading states properly
+  // Declare fetchConversations after fetchMessages
+  const fetchConversations = useCallback(async (page = 1) => {
+    if (!session?.user) return;
+
+    try {
+      setIsLoadingMore(true);
+      const { data, pageCount, currentPage } = await fetchConversationData(page);
+
+      if (Array.isArray(data)) {
+        // Process conversations without fetching messages
+        const processedData = data.map(conv => ({
+          ...conv,
+          god_chat_messages: [] // Initialize empty, will be loaded when conversation is selected
+        }));
+
+        setConversations(prev =>
+          page === 1 ? processedData : [...prev, ...processedData]
+        );
+
+        setTotalPages(pageCount);
+        setCurrentPage(currentPage);
+        setHasMore(currentPage < pageCount);
+      }
+    } catch (error: any) {
+      console.error('Error fetching conversations:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to load conversations');
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }, [session?.user]);
+
+  // Consolidate initialization effects into one
   useEffect(() => {
     let mounted = true;
 
-    const init = async () => {
-      if (status === 'loading') return;
-      
-      if (!session?.user) {
-        router.push('/auth/signin');
-        return;
-      }
+    const initialize = async () => {
+      if (isInitialized || !session?.user || status !== 'authenticated') return;
 
-      if (mounted) {
+      try {
+        await fetchUserName();
         await fetchConversations();
+        setIsInitialized(true);
+      } catch (error) {
+        console.error('Initialization error:', error);
       }
     };
 
-    init();
+    initialize();
 
     return () => {
       mounted = false;
     };
-  }, [session, status, router, fetchConversations]);
+  }, [session, status, isInitialized, fetchConversations]);
 
-  // Update conversation effect to prevent unnecessary calls
+  // Replace existing message fetching effect with a more controlled one
   useEffect(() => {
     let mounted = true;
 
     const loadMessages = async () => {
-      if (currentConversation && mounted && session?.user) {
+      if (!currentConversation || !session?.user || !isInitialized || isHistoryLoading) return;
+
+      if (!hasLoadedRef.current[currentConversation] && !rateLimitRef.current[currentConversation]) {
         await fetchMessages(currentConversation);
       }
     };
@@ -218,134 +226,136 @@ export default function BibleChatPage() {
     return () => {
       mounted = false;
     };
-  }, [currentConversation, session?.user, fetchMessages]);
+  }, [currentConversation, session?.user, isInitialized, isHistoryLoading, fetchMessages]);
 
-  const createNewConversation = async (): Promise<Conversation | null> => {
-    if (status === 'loading') return null;
-    
-    if (!session?.user) {
-      toast.error('Please sign in to create a conversation');
-      return null;
+  // Add scroll to bottom effect
+  useEffect(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
+  }, [messages]);
 
+  // Add function to fetch user's name
+  const fetchUserName = async () => {
     try {
+      const sessionData = await getSession();
+      if (!sessionData?.user?.id) return;
+
+      const response = await fetch("/api/user/profile");
+      if (response.ok) {
+        const data = await response.json();
+        setFirstName(data.first_name || "friend");
+      } else if (response.status === 429) {
+        toast.error('Too Many Requests. Please try again later.');
+      }
+    } catch (error) {
+      console.error("Error fetching user name:", error);
+      toast.error('Failed to fetch user name.');
+    }
+  };
+
+  // Add load more function
+  const loadMore = useCallback(async () => {
+    if (isLoadingMore || !hasMore) return;
+    setIsLoadingMore(true);
+    await fetchConversations(currentPage + 1);
+  }, [currentPage, hasMore, isLoadingMore, fetchConversations]);
+
+  const createNewConversation = async (): Promise<string | null> => {
+    try {
+      const title = "Chat_" + new Date().toLocaleString('en-US', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true
+      }).replace(/[/,]/g, '-').replace(' ', '_');
+
+      console.log('DEBUG: Creating new conversation with title:', title);
+
       const response = await fetch("/api/chat/conversations", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        credentials: 'include'  // Important for session handling
+        credentials: 'include',
+        body: JSON.stringify({ title })
       });
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Failed to create conversation');
-      }
+      console.log('DEBUG: Response status:', response.status);
 
       const data = await response.json();
+      console.log('DEBUG: Response data:', data);
+
+      if (!response.ok) {
+        throw new Error(data.error || data.details || 'Failed to create conversation');
+      }
+
+      if (!data.id) {
+        console.error('Invalid response format:', data);
+        throw new Error('Invalid response format from server');
+      }
+
+      // Add the new conversation to the state
       setConversations(prev => [...prev, data]);
       setCurrentConversation(data.id);
       setMessages([]);
-      return data;
-    } catch (error) {
-      console.error('Error creating conversation:', error);
-      toast.error('Failed to create conversation');
+      return data.id;
+    } catch (error: any) {
+      console.error("Error creating conversation:", error);
+      toast.error(error instanceof Error ? error.message : "Failed to create conversation");
       return null;
     }
   };
 
-  // Add this function to handle the API call
-  const updateConversationTitleAPI = async (conversationId: string, newTitle: string) => {
-    console.log('DEBUG: Starting title update for conversation:', conversationId);
-    console.log('DEBUG: New title:', newTitle);
-    
-    if (!session?.user) {
-      throw new Error('Please sign in to update conversation titles');
-    }
+  const typeResponse = async (response: string) => {
+    setIsTyping(true);
+    const paragraphs = response.split(/\n\n+/);
+    let currentText = '';
 
-    try {
-      const response = await fetch(`/api/chat/conversations/${conversationId}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ title: newTitle.trim() }),
-        credentials: 'include'
-      });
+    for (let paragraph of paragraphs) {
+      // Skip empty paragraphs
+      if (!paragraph.trim()) continue;
 
-      console.log('DEBUG: Response status:', response.status);
-      const responseText = await response.text();
-      console.log('DEBUG: Raw response:', responseText);
-
-      let data;
-      try {
-        data = JSON.parse(responseText);
-      } catch (parseError) {
-        console.error('DEBUG: Error parsing response:', parseError);
-        console.error('DEBUG: Response text:', responseText);
-        throw new Error(`Server error: ${responseText}`);
+      // Add double newline before paragraph
+      if (currentText) {
+        currentText += '\n\n';
+        setDisplayedResponse(currentText);
+        await new Promise(resolve => setTimeout(resolve, 100));
       }
 
-      if (!response.ok) {
-        const errorMessage = data.error || 'Failed to update conversation title';
-        console.error('DEBUG: API error:', errorMessage);
-        if (data.details) {
-          console.error('DEBUG: Error details:', data.details);
-        }
-        throw new Error(errorMessage);
+      // Type out the paragraph
+      const words = paragraph.split(' ');
+      for (let word of words) {
+        currentText += word + ' ';
+        setDisplayedResponse(currentText);
+        await new Promise(resolve => setTimeout(resolve, 30));
       }
-
-      console.log('DEBUG: Successfully updated conversation:', data);
-      return data;
-    } catch (error) {
-      console.error('DEBUG: Error in updateConversationTitleAPI:', error);
-      throw error;
     }
-  };
 
-  // Update the existing updateConversationTitle function
-  const updateConversationTitle = async () => {
-    try {
-      if (!currentConversation || !editTitle) {
-        toast.error('Invalid conversation or title');
-        return;
-      }
-
-      const updatedConversation = await updateConversationTitleAPI(
-        currentConversation,
-        editTitle
-      );
-
-      setConversations(prev =>
-        prev.map(conv =>
-          conv.id === currentConversation
-            ? { ...conv, title: editTitle }
-            : conv
-        )
-      );
-
-      setIsEditModalOpen(false);
-      setEditTitle('');
-      toast.success('Conversation title updated');
-    } catch (error: any) {
-      console.error('Error updating title:', error);
-      toast.error(error.message || 'Failed to update conversation title');
-    }
+    setIsTyping(false);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || isLoading) return;
+    if (!input.trim() || isMessageLoading) return;
 
     try {
-      setIsLoading(true);
+      setIsMessageLoading(true);
 
-      // Create new conversation if needed
+      // Create new chat if needed
       if (!currentConversation) {
-        const newConv = await createNewConversation();
-        if (!newConv) {
+        const newConvId = await createNewConversation();
+        if (!newConvId) {
           throw new Error('Failed to create conversation');
         }
+        setCurrentConversation(newConvId);
+        await new Promise(resolve => setTimeout(resolve, 100)); // Small delay to ensure state is updated
+      }
+
+      if (!currentConversation) {
+        throw new Error('No active conversation');
       }
 
       // Add user message immediately
@@ -365,40 +375,80 @@ export default function BibleChatPage() {
         },
         body: JSON.stringify({
           message: input.trim(),
-          conversationId: currentConversation
+          conversationId: currentConversation,
+          firstName: firstName
         })
       });
 
-      const data = await response.json();
-      
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to get response');
+        const errorData = await response.json().catch(() => ({}));
+        if (response.status === 429) {
+          throw new Error('Rate limit reached. Please try again later.');
+        }
+        throw new Error(errorData.error || 'Failed to get response');
       }
+
+      const data = await response.json();
 
       if (!data.message) {
         throw new Error('No message received from AI');
       }
 
-      // Add AI response to messages
-      const aiMessage: Message = {
+      // Format the AI response with markdown and proper spacing
+      const formattedMessage = data.message.trim();
+
+      // Create temporary message for typing effect
+      const tempMessage: Message = {
         role: "assistant",
-        content: data.message,
+        content: "",
         created_at: new Date().toISOString()
       };
-      setMessages(prev => [...prev, aiMessage]);
+      setMessages(prev => [...prev, tempMessage]);
 
-    } catch (error) {
+      // Start typing effect
+      await typeResponse(formattedMessage);
+
+      // Update the message with complete response
+      setMessages(prev => {
+        const newMessages = [...prev];
+        newMessages[newMessages.length - 1] = {
+          ...newMessages[newMessages.length - 1],
+          content: formattedMessage
+        };
+        return newMessages;
+      });
+
+      // Update conversation title if it's a new chat
+      const currentConv = conversations.find(conv => conv.id === currentConversation);
+      if (currentConv?.title.startsWith("Chat_")) {
+        const title = "Chat_" + new Date().toLocaleString('en-US', {
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true
+        }).replace(/[/,]/g, '-').replace(' ', '_');
+        await updateConversationTitle(currentConversation, title);
+      }
+
+      // After successful message send
+      setShouldRefresh(true);
+
+    } catch (error: any) {
       console.error("Chat error:", error);
-      toast.error(error instanceof Error ? error.message : 'Failed to send message');
-      
-      const errorMessage = `
-### Error
+      toast.error(error.message || 'Failed to send message');
 
-I apologize, but I'm having trouble responding right now. Please try again later.
+      const errorMessage = `### Error
+
+I apologize, ${firstName}, but I'm having trouble responding right now. Please try again later.
 
 ---
+
 *If this problem persists, please contact support.*
-      `.trim();
+
+With care,
+Zoe 🙏`;
 
       setMessages(prev => [...prev, {
         role: "assistant",
@@ -406,7 +456,37 @@ I apologize, but I'm having trouble responding right now. Please try again later
         created_at: new Date().toISOString()
       }]);
     } finally {
-      setIsLoading(false);
+      setIsMessageLoading(false);
+      setDisplayedResponse("");
+    }
+  };
+
+  const updateConversationTitle = async (conversationId: string | null, newTitle: string) => {
+    if (!conversationId) return;
+
+    try {
+      const response = await fetch(`/api/chat/conversations/${conversationId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ title: newTitle })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update conversation title');
+      }
+
+      setConversations(prev =>
+        prev.map(conv =>
+          conv.id === conversationId
+            ? { ...conv, title: newTitle }
+            : conv
+        )
+      );
+    } catch (error) {
+      console.error("Error updating conversation title:", error);
+      // Don't show error toast for title update failure
     }
   };
 
@@ -421,9 +501,12 @@ I apologize, but I'm having trouble responding right now. Please try again later
 
   const deleteConversation = async (conversationId: string) => {
     try {
+      // Delete conversation and its messages
       const response = await fetch(`/api/chat/conversations/${conversationId}`, {
         method: 'DELETE',
-        credentials: 'include'
+        headers: {
+          'Content-Type': 'application/json'
+        }
       });
 
       if (!response.ok) {
@@ -433,7 +516,7 @@ I apologize, but I'm having trouble responding right now. Please try again later
 
       // Update local state
       setConversations(prev => prev.filter(conv => conv.id !== conversationId));
-      
+
       // If the deleted conversation was the current one, clear it
       if (currentConversation === conversationId) {
         setCurrentConversation(null);
@@ -447,6 +530,14 @@ I apologize, but I'm having trouble responding right now. Please try again later
     }
   };
 
+  // Update conversation selection handler
+  const handleConversationSelect = useCallback((conversationId: string) => {
+    setCurrentConversation(conversationId);
+    if (!hasLoadedRef.current[conversationId] && !rateLimitRef.current[conversationId]) {
+      fetchMessages(conversationId);
+    }
+  }, [fetchMessages]);
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-2 lg:px-8 py-0">
       {/* Chat Section */}
@@ -459,7 +550,7 @@ I apologize, but I'm having trouble responding right now. Please try again later
           {/* Conversation Sidebar */}
           <div className="col-span-3 border-r border-gray-200 dark:border-gray-700 pr-4">
             <Button
-              className="w-full mb-4 bg-primary text-primary-foreground hover:bg-primary/90"
+              className="w-full mb-4 bg-blue-600 hover:bg-blue-700 text-white transition-colors"
               onClick={createNewConversation}
             >
               <Plus className="h-4 w-4 mr-2" />
@@ -472,10 +563,10 @@ I apologize, but I'm having trouble responding right now. Please try again later
                   key={conv.id}
                   className={`p-3 rounded-lg cursor-pointer ${
                     currentConversation === conv.id
-                      ? "bg-primary/10 text-primary"
-                      : "hover:bg-accent"
+                      ? "bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400"
+                      : "hover:bg-blue-50 dark:hover:bg-blue-900/20"
                   }`}
-                  onClick={() => setCurrentConversation(conv.id)}
+                  onClick={() => handleConversationSelect(conv.id)}
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex-1 min-w-0">
@@ -489,12 +580,21 @@ I apologize, but I'm having trouble responding right now. Please try again later
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
+                            if (isUpdating) return; // Prevent clicks while updating
                             setEditTitle(conv.title);
                             setIsEditModalOpen(true);
                           }}
-                          className="p-1 hover:bg-accent rounded"
+                          disabled={isUpdating}
+                          className={clsx(
+                            "p-1 hover:bg-blue-200 dark:hover:bg-blue-800 rounded transition-colors",
+                            isUpdating && "opacity-50 cursor-not-allowed"
+                          )}
                         >
-                          <Edit2 className="h-4 w-4" />
+                          {isUpdating ? (
+                            <Clock className="h-4 w-4 text-blue-600 dark:text-blue-400 animate-spin" />
+                          ) : (
+                            <Edit2 className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                          )}
                         </button>
                         <button
                           onClick={(e) => {
@@ -502,81 +602,128 @@ I apologize, but I'm having trouble responding right now. Please try again later
                             setConversationToDelete(conv.id);
                             setIsDeleteDialogOpen(true);
                           }}
-                          className="p-1 hover:bg-accent rounded text-red-500"
+                          className="p-1 hover:bg-red-200 dark:hover:bg-red-800 rounded transition-colors"
                         >
-                          <Trash2 className="h-4 w-4" />
+                          <Trash2 className="h-4 w-4 text-red-500" />
                         </button>
                       </div>
                     )}
                   </div>
                 </div>
               ))}
+
+              {hasMore && (
+                <button
+                  onClick={loadMore}
+                  disabled={isLoadingMore}
+                  className="w-full mt-4 p-2 text-sm text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+                >
+                  {isLoadingMore ? (
+                    <span className="flex items-center justify-center">
+                      <Clock className="h-4 w-4 animate-spin mr-2" />
+                      Loading...
+                    </span>
+                  ) : (
+                    'Load More'
+                  )}
+                </button>
+              )}
+
+              {/* Retry Button for Rate Limited Conversations */}
+              {currentConversation && rateLimitRef.current[currentConversation] && (
+                <div className="text-center mt-4">
+                  <p className="text-red-500">You have reached the maximum number of requests. Please try again later.</p>
+                  <Button onClick={() => { rateLimitRef.current[currentConversation] = false; fetchMessages(currentConversation); }}>
+                    Retry
+                  </Button>
+                </div>
+              )}
             </div>
           </div>
 
           {/* Chat Messages */}
           <div className="col-span-9 flex flex-col h-[calc(80vh-2rem)]">
             <div className="flex-1 overflow-y-auto px-4 space-y-4">
-              {messages.map((message, index) => (
-                <div
-                  key={index}
-                  className={`flex ${
-                    message.role === "user" ? "justify-end" : "justify-start"
-                  }`}
-                >
+              {isHistoryLoading ? (
+                <div className="flex justify-center items-center h-full">
+                  <Clock className="animate-spin h-6 w-6 text-blue-600" />
+                </div>
+              ) : (
+                messages.map((message, index) => (
                   <div
-                    className={`max-w-[80%] rounded-lg px-4 py-2 ${
-                      message.role === "user"
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-muted"
+                    key={index}
+                    className={`flex ${
+                      message.role === "user" ? "justify-end" : "justify-start"
                     }`}
                   >
-                    {message.role === "assistant" ? (
-                      <div
-                        className="prose dark:prose-invert max-w-none"
-                        dangerouslySetInnerHTML={{
-                          __html: marked(message.content, {
-                            breaks: true,
-                            gfm: true,
-                            smartLists: true,
-                            smartypants: true
-                          })
-                        }}
-                      />
-                    ) : (
-                      <div className="whitespace-pre-wrap">{message.content}</div>
-                    )}
-                    <div className="text-xs opacity-70 mt-1">
-                      {format(new Date(message.created_at), "h:mm a")}
+                    <div
+                      className={`max-w-[80%] rounded-lg px-4 py-2 ${
+                        message.role === "user"
+                          ? "bg-transparent text-primary-foreground"
+                          : "bg-muted"
+                      }`}
+                    >
+                      {message.role === "assistant" ? (
+                        <div
+                          className="prose dark:prose-invert max-w-none whitespace-pre-wrap"
+                          dangerouslySetInnerHTML={{
+                            __html: marked(
+                              message === messages[messages.length - 1] && isTyping
+                                ? displayedResponse
+                                : message.content,
+                              {
+                                breaks: true,
+                                gfm: true,
+                                smartLists: true,
+                                smartypants: true,
+                                mangle: false,
+                                headerIds: false
+                              }
+                            )
+                          }}
+                        />
+                      ) : (
+                        <div className="whitespace-pre-wrap">{message.content}</div>
+                      )}
+                      <div className="text-xs opacity-70 mt-1">
+                        {format(new Date(message.created_at), "h:mm a")}
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                ))
+              )}
+              <div ref={messagesEndRef} />
             </div>
 
             {/* Chat Input */}
             <div className="border-t border-gray-200 dark:border-gray-700 pt-4 mt-4">
               <form onSubmit={handleSubmit} className="flex gap-2">
-                <Input
+                <Textarea
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   placeholder="Type your message..."
                   className="flex-1"
-                  disabled={isLoading}
+                  disabled={isMessageLoading}
+                  classNames={{
+                    input: "px-4 py-2 whitespace-pre-wrap break-words",
+                    inputWrapper: "px-1"
+                  }}
+                  minRows={1}
+                  maxRows={4}
                 />
                 <Button 
                   type="submit" 
-                  disabled={isLoading}
-                  className="bg-primary text-primary-foreground hover:bg-primary/90"
+                  disabled={isMessageLoading}
+                  className="bg-blue-600 hover:bg-blue-700 text-white transition-colors px-6"
                 >
-                  {isLoading ? (
-                    <span className="flex items-center">
-                      <Clock className="animate-spin h-4 w-4 mr-2" />
+                  {isMessageLoading ? (
+                    <span className="flex items-center gap-2">
+                      <Clock className="animate-spin h-4 w-4" />
                       Sending...
                     </span>
                   ) : (
-                    <span className="flex items-center">
-                      <Send className="h-4 w-4 mr-2" />
+                    <span className="flex items-center gap-2">
+                      <Send className="h-4 w-4" />
                       Send
                     </span>
                   )}
@@ -623,16 +770,33 @@ I apologize, but I'm having trouble responding right now. Please try again later
                 <Button 
                   variant="flat" 
                   onPress={onClose}
-                  className="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300"
+                  disabled={isUpdating}
+                  className={clsx(
+                    "bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 transition-colors",
+                    isUpdating && "opacity-50 cursor-not-allowed"
+                  )}
                 >
                   Cancel
                 </Button>
-                <Button 
-                  color="primary" 
-                  onPress={updateConversationTitle}
-                  className="bg-blue-600 dark:bg-blue-500 text-white"
+                <Button
+                  onClick={() => {
+                    updateConversationTitle(currentConversation, editTitle);
+                    setIsEditModalOpen(false);
+                  }}
+                  disabled={isUpdating}
+                  className={clsx(
+                    "bg-blue-600 hover:bg-blue-700 text-white transition-colors",
+                    isUpdating && "opacity-50 cursor-not-allowed"
+                  )}
                 >
-                  Save
+                  {isUpdating ? (
+                    <span className="flex items-center gap-2">
+                      <Clock className="animate-spin h-4 w-4" />
+                      Updating...
+                    </span>
+                  ) : (
+                    "Save"
+                  )}
                 </Button>
               </ModalFooter>
             </>
@@ -640,7 +804,7 @@ I apologize, but I'm having trouble responding right now. Please try again later
         </ModalContent>
       </Modal>
 
-      {/* Add the delete confirmation dialog */}
+      {/* Delete Confirmation Dialog */}
       <AlertDialog 
         open={isDeleteDialogOpen} 
         onOpenChange={setIsDeleteDialogOpen}
@@ -654,14 +818,16 @@ I apologize, but I'm having trouble responding right now. Please try again later
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => {
-              setIsDeleteDialogOpen(false);
-              setConversationToDelete(null);
-            }}>
+            <AlertDialogCancel 
+              className="bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 transition-colors"
+              onClick={() => {
+                setIsDeleteDialogOpen(false);
+                setConversationToDelete(null);
+              }}>
               Cancel
             </AlertDialogCancel>
             <AlertDialogAction
-              className="bg-red-500 hover:bg-red-600 text-white"
+              className="bg-blue-600 hover:bg-blue-700 text-white transition-colors"
               onClick={() => {
                 if (conversationToDelete) {
                   deleteConversation(conversationToDelete);

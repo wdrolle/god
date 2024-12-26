@@ -28,10 +28,44 @@ import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
+import { headers } from 'next/headers';
 
 // Force dynamic rendering and use Node.js runtime
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
+
+// Simple in-memory cache for rate limiting
+const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute
+const MAX_REQUESTS_PER_WINDOW = 30;
+const requestCounts = new Map<string, { count: number; timestamp: number }>();
+
+// Clean up old rate limit entries every minute
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, value] of requestCounts.entries()) {
+    if (now - value.timestamp > RATE_LIMIT_WINDOW) {
+      requestCounts.delete(key);
+    }
+  }
+}, RATE_LIMIT_WINDOW);
+
+// Rate limiting middleware
+function checkRateLimit(userId: string): boolean {
+  const now = Date.now();
+  const userRequests = requestCounts.get(userId);
+
+  if (!userRequests || now - userRequests.timestamp > RATE_LIMIT_WINDOW) {
+    requestCounts.set(userId, { count: 1, timestamp: now });
+    return true;
+  }
+
+  if (userRequests.count >= MAX_REQUESTS_PER_WINDOW) {
+    return false;
+  }
+
+  userRequests.count++;
+  return true;
+}
 
 /**
  * GET Handler - Fetch User's Conversations
@@ -55,6 +89,21 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    // Check rate limit
+    if (!checkRateLimit(session.user.id)) {
+      return NextResponse.json(
+        { error: "Too many requests. Please wait a moment before trying again." },
+        { 
+          status: 429,
+          headers: {
+            'Retry-After': '60',
+            'X-RateLimit-Limit': MAX_REQUESTS_PER_WINDOW.toString(),
+            'X-RateLimit-Reset': (Date.now() + RATE_LIMIT_WINDOW).toString()
+          }
+        }
+      );
+    }
+
     // Get god_user for the auth user
     const godUser = await prisma.god_users.findFirst({
       where: {
@@ -66,37 +115,62 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    // Fetch conversations with messages
-    const conversations = await prisma.god_chat_conversations.findMany({
-      where: {
-        user_id: godUser.id
-      },
-      include: {
-        god_chat_messages: {
-          orderBy: {
-            created_at: 'asc'
-          }
-        }
-      },
-      orderBy: {
-        updated_at: 'desc'
-      }
-    });
+    // Fetch all conversations for the user with pagination
+    const page = parseInt(new URL(req.url).searchParams.get('page') || '1');
+    const limit = 20;
+    const offset = (page - 1) * limit;
 
-    return NextResponse.json(conversations);
+    const [conversations, total] = await Promise.all([
+      prisma.god_chat_conversations.findMany({
+        where: {
+          user_id: godUser.id
+        },
+        include: {
+          god_chat_messages: {
+            orderBy: {
+              created_at: 'asc'
+            },
+            take: 1 // Only get the latest message for preview
+          }
+        },
+        orderBy: {
+          updated_at: 'desc'
+        },
+        take: limit,
+        skip: offset
+      }),
+      prisma.god_chat_conversations.count({
+        where: {
+          user_id: godUser.id
+        }
+      })
+    ]);
+
+    // Add cache control headers
+    const headers = {
+      'Cache-Control': 'private, max-age=10',
+      'X-Total-Count': total.toString(),
+      'X-Page-Count': Math.ceil(total / limit).toString(),
+      'X-Current-Page': page.toString()
+    };
+
+    return NextResponse.json(conversations, { headers });
   } catch (error) {
     console.error('Server error:', error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 }
+    );
   }
 }
 
 /**
- * POST Handler - Create New Conversation
+ * POST Handler - Create New Chat
  * 
  * Flow:
  * 1. Verify authentication
  * 2. Get god_users record for auth user
- * 3. Create new conversation
+ * 3. Create new chat
  * 
  * Request Body: None required
  * 
@@ -108,45 +182,62 @@ export async function GET(req: Request) {
  */
 export async function POST(req: Request) {
   try {
-    // Get server session
+    console.log('DEBUG: Starting POST chat request');
     const session = await getServerSession(authOptions);
+    console.log('DEBUG: Session:', JSON.stringify(session, null, 2));
     
     if (!session?.user?.id) {
       console.error('No session found');
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    // Parse request body
+    const body = await req.json();
+    console.log('DEBUG: Request body:', JSON.stringify(body, null, 2));
+
     // Start transaction
+    console.log('DEBUG: Starting transaction');
     const conversation = await prisma.$transaction(async (tx) => {
-      // Get god_user using email from session
+      // Get god_user using auth_user_id from session
+      console.log('DEBUG: Looking up god_user for auth_user_id:', session.user.id);
       const godUser = await tx.god_users.findFirst({
         where: { 
-          email: session.user.email as string
+          auth_user_id: session.user.id
         }
       });
+      console.log('DEBUG: Found god_user:', JSON.stringify(godUser, null, 2));
 
       if (!godUser) {
-        console.error('God user not found for email:', session.user.email);
+        console.error('God user not found for auth_user_id:', session.user.id);
         throw new Error('User not found');
       }
 
+      // Generate a unique ID for the conversation
+      const id = crypto.randomUUID();
+
       // Create conversation
+      console.log('DEBUG: Creating new chat for user_id:', godUser.id);
       return await tx.god_chat_conversations.create({
         data: {
+          id: id,
           user_id: godUser.id,
-          title: "New Conversation",
+          title: body.title || "New Chat",
           created_at: new Date(),
           updated_at: new Date()
+        },
+        include: {
+          god_chat_messages: true
         }
       });
     });
+    console.log('DEBUG: Created chat:', JSON.stringify(conversation, null, 2));
 
     return NextResponse.json(conversation);
   } catch (error) {
     console.error('Server error:', error);
     return NextResponse.json(
       { 
-        error: "Failed to create conversation", 
+        error: "Failed to create chat", 
         details: error instanceof Error ? error.message : 'Unknown error'
       },
       { status: 500 }

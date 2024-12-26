@@ -1,7 +1,5 @@
 // api/chat/conversations/[id]/route.ts
-// This is the route for updating a conversation
-// It is used to update the title of a conversation
-// Handles updating a conversation
+// This is the route for upserting a conversation
 
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
@@ -12,101 +10,54 @@ export async function POST(
   req: Request,
   { params }: { params: { id: string } }
 ) {
-  console.log('DEBUG: Starting conversation update request');
-  console.log('DEBUG: Conversation ID:', params.id);
-  
   try {
-    // Get session from NextAuth
     const session = await getServerSession(authOptions);
-    console.log('DEBUG: Session:', JSON.stringify(session, null, 2));
     
     if (!session?.user) {
-      console.log('DEBUG: No session found');
       return new NextResponse(
         JSON.stringify({ error: "Unauthorized" }), 
-        { 
-          status: 401,
-          headers: {
-            'Content-Type': 'application/json'
-          }
-        }
+        { status: 401 }
       );
     }
 
-    let body;
-    try {
-      const text = await req.text(); // Get raw body text first
-      console.log('DEBUG: Raw request body:', text);
-      
-      try {
-        body = JSON.parse(text);
-        console.log('DEBUG: Parsed request body:', body);
-      } catch (parseError) {
-        console.error('DEBUG: JSON parse error:', parseError);
-        return new NextResponse(
-          JSON.stringify({ error: "Invalid JSON in request body" }),
-          { 
-            status: 400,
-            headers: {
-              'Content-Type': 'application/json'
-            }
-          }
-        );
-      }
-    } catch (bodyError) {
-      console.error('DEBUG: Body read error:', bodyError);
-      return new NextResponse(
-        JSON.stringify({ error: "Failed to read request body" }),
-        { 
-          status: 400,
-          headers: {
-            'Content-Type': 'application/json'
-          }
-        }
-      );
-    }
-
+    const body = await req.json();
     const { title } = body;
 
     if (!title || typeof title !== 'string') {
-      console.log('DEBUG: Invalid title:', title);
       return new NextResponse(
         JSON.stringify({ error: "Invalid title" }),
-        { 
-          status: 400,
-          headers: {
-            'Content-Type': 'application/json'
-          }
-        }
+        { status: 400 }
       );
     }
 
-    try {
-      // Get the god_user
-      const godUser = await prisma.god_users.findFirst({
-        where: { 
-          auth_user_id: session.user.id 
-        }
-      });
-      console.log('DEBUG: Found god_user:', JSON.stringify(godUser, null, 2));
+    // Get the god_user
+    const godUser = await prisma.god_users.findFirst({
+      where: { auth_user_id: session.user.id }
+    });
 
-      if (!godUser) {
-        console.log('DEBUG: No god_user found');
-        return new NextResponse(
-          JSON.stringify({ error: "User not found" }),
-          { 
-            status: 404,
-            headers: {
-              'Content-Type': 'application/json'
-            }
-          }
-        );
+    if (!godUser) {
+      return new NextResponse(
+        JSON.stringify({ error: "User not found" }),
+        { status: 404 }
+      );
+    }
+
+    // Try to find existing conversation
+    const existingConversation = await prisma.god_chat_conversations.findFirst({
+      where: {
+        id: params.id,
+        user_id: godUser.id
       }
+    });
 
-      // Update conversation
-      const updatedConversation = await prisma.god_chat_conversations.update({
+    let updatedConversation;
+    
+    if (existingConversation) {
+      // Update existing conversation
+      updatedConversation = await prisma.god_chat_conversations.update({
         where: {
-          id: params.id
+          id: params.id,
+          user_id: godUser.id
         },
         data: { 
           title: title.trim(),
@@ -120,45 +71,39 @@ export async function POST(
           }
         }
       });
-      console.log('DEBUG: Updated conversation:', JSON.stringify(updatedConversation, null, 2));
-
-      return new NextResponse(
-        JSON.stringify(updatedConversation),
-        { 
-          status: 200,
-          headers: {
-            'Content-Type': 'application/json'
+    } else {
+      // Create new chat with the specified ID
+      updatedConversation = await prisma.god_chat_conversations.create({
+        data: {
+          id: params.id,
+          user_id: godUser.id,
+          title: title.trim(),
+          created_at: new Date(),
+          updated_at: new Date()
+        },
+        include: {
+          god_chat_messages: {
+            orderBy: {
+              created_at: 'asc'
+            }
           }
         }
-      );
-    } catch (dbError: any) {
-      console.error('DEBUG: Database error:', dbError);
-      return new NextResponse(
-        JSON.stringify({ 
-          error: "Database operation failed",
-          details: dbError.message 
-        }),
-        { 
-          status: 500,
-          headers: {
-            'Content-Type': 'application/json'
-          }
-        }
-      );
+      });
     }
+
+    return new NextResponse(
+      JSON.stringify(updatedConversation),
+      { status: 200 }
+    );
+
   } catch (error: any) {
-    console.error('DEBUG: Error in route handler:', error);
+    console.error('Error upserting conversation:', error);
     return new NextResponse(
       JSON.stringify({ 
-        error: "Failed to update conversation",
+        error: "Failed to upsert conversation",
         details: error.message 
       }),
-      { 
-        status: 500,
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      }
+      { status: 500 }
     );
   }
 }

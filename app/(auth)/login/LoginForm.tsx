@@ -17,6 +17,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { Label } from "@/components/ui/label";
 
 const loginSchema = z.object({
   email: z.string().email("Invalid email address"),
@@ -93,6 +94,7 @@ export default function LoginForm() {
                     placeholder="Email"
                     className="w-full"
                     required
+                    autoComplete="email"
                   />
                 </FormControl>
                 <FormMessage />
@@ -112,6 +114,7 @@ export default function LoginForm() {
                     placeholder="Password"
                     className="w-full"
                     required
+                    autoComplete="current-password"
                   />
                 </FormControl>
                 <FormMessage />
