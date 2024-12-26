@@ -5,6 +5,7 @@
 "use client"
 
 import * as React from "react"
+import * as LabelPrimitive from "@radix-ui/react-label"
 import {
   useFormContext,
   UseFormReturn,
@@ -16,6 +17,7 @@ import {
   Control,
 } from "react-hook-form"
 import { cn } from "@/lib/utils"
+import { Label } from "@/components/ui/label"
 
 interface FormProps<TFieldValues extends FieldValues = FieldValues>
   extends Omit<React.FormHTMLAttributes<HTMLFormElement>, "onSubmit"> {
@@ -61,6 +63,20 @@ const FormItem = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivEl
 )
 FormItem.displayName = "FormItem"
 
+const FormLabel = React.forwardRef<
+  React.ElementRef<typeof LabelPrimitive.Root>,
+  React.ComponentPropsWithoutRef<typeof LabelPrimitive.Root>
+>(({ className, ...props }, ref) => {
+  return (
+    <Label
+      ref={ref}
+      className={cn("text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70", className)}
+      {...props}
+    />
+  )
+})
+FormLabel.displayName = "FormLabel"
+
 const FormControl = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
   ({ ...props }, ref) => {
     return <div ref={ref} {...props} />
@@ -86,6 +102,7 @@ FormMessage.displayName = "FormMessage"
 export {
   Form,
   FormItem,
+  FormLabel,
   FormControl,
   FormMessage,
   FormField,

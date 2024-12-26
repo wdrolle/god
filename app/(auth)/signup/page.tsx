@@ -2,17 +2,12 @@
 // This file is used to handle the signup page
 // It is used to create a new user account
 
-"use client";
+import SignupForm from './SignupForm';
 
-import Signup from './Signup'
-
-const SignupPage = () => {
+export default function SignupPage() {
   return (
-    <div>
-      <h1>Sign Up</h1>
-      <Signup />
+    <div className="container mx-auto py-10">
+      <SignupForm />
     </div>
-  )
+  );
 }
-
-export default SignupPage

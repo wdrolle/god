@@ -1,92 +1,121 @@
 // File: /app/api/signup/route.ts
 // This is the route for signing up a user
-import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/prisma' // Ensure this path is correct
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
 import { hash } from "bcryptjs";
-import { Resend } from 'resend';
+import { v4 as uuidv4 } from "uuid";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
-
-export async function POST(request: NextRequest) {
+export async function POST(req: NextRequest) {
   try {
-    const body = await request.json()
+    const body = await req.json();
+    const { email, password, confirm_password, first_name, last_name, phone } = body;
 
-    const { email, password, first_name, last_name, phone, country_code } = body as {
-      email: string
-      password: string
-      first_name: string
-      last_name: string
-      phone: string
-      country_code: string
+    // Validate required fields
+    if (!email || !password || !confirm_password || !first_name || !last_name) {
+      return NextResponse.json({ error: "All fields are required" }, { status: 400 });
     }
 
-    // Check if user exists
-    const existingUser = await prisma.users.findUnique({
-      where: { email },
+    // Validate password match
+    if (password !== confirm_password) {
+      return NextResponse.json({ error: "Passwords do not match" }, { status: 400 });
+    }
+
+    // Check if user already exists
+    const existingUser = await prisma.users.findFirst({
+      where: { email: email.toLowerCase() },
     });
 
     if (existingUser) {
-      return NextResponse.json(
-        { error: "User already exists" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Email already registered" }, { status: 400 });
     }
 
-    // Hash password
-    const hashedPassword = await hash(password, 12);
+    const user_id = uuidv4();
+    const confirmationToken = uuidv4();
+    const hashedPassword = await hash(password, 10);
 
-    // Create confirmation token
-    const confirmationToken = crypto.randomUUID();
-
-    // Create user in database
-    const user = await prisma.users.create({
-      data: {
-        email,
-        encrypted_password: hashedPassword,
-        phone,
-        confirmation_token: confirmationToken,
-        god_users: {
-          create: {
-            email,
+    const result = await prisma.$transaction(async (tx) => {
+      // Create auth user
+      const authUser = await tx.users.create({
+        data: {
+          id: user_id,
+          instance_id: uuidv4(),
+          aud: 'authenticated',
+          role: 'authenticated',
+          email: email.toLowerCase(),
+          encrypted_password: hashedPassword,
+          email_confirmed_at: new Date(),
+          confirmed_at: new Date(),
+          last_sign_in_at: null,
+          raw_app_meta_data: {
+            provider: 'email',
+            providers: ['email']
+          },
+          raw_user_meta_data: {
             first_name,
             last_name,
-            phone,
-            role: 'USER',
-            subscription_status: 'TRIAL',
-          }
+            phone
+          },
+          created_at: new Date(),
+          updated_at: new Date(),
+          phone: phone,
+          phone_confirmed_at: null,
+          confirmation_token: null,
+          confirmation_sent_at: null,
+          recovery_token: null
         }
-      },
-      include: {
-        god_users: true,
-      },
+      });
+
+      // Create god user
+      const godUser = await tx.god_users.create({
+        data: {
+          auth_user_id: authUser.id,
+          email: email.toLowerCase(),
+          first_name,
+          last_name,
+          phone,
+          role: 'USER',
+          subscription_status: 'TRIAL',
+          created_at: new Date(),
+          updated_at: new Date()
+        }
+      });
+
+      return { authUser, godUser };
     });
 
-    // Send confirmation email
-    const confirmUrl = `${process.env.NEXT_PUBLIC_APP_URL}/confirm-email?token=${confirmationToken}`;
-    
-    await resend.emails.send({
-      from: 'info@email.2920.ai',
-      to: email,
-      subject: 'Confirm your email',
-      html: `
-        <h1>Welcome to Daily Bible Verses!</h1>
-        <p>Hi ${first_name},</p>
-        <p>Please confirm your email by clicking the link below:</p>
-        <a href="${confirmUrl}">Confirm Email</a>
-        <p>If you didn't create this account, you can ignore this email.</p>
-      `
+    // Send welcome email
+    const emailResponse = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL}/api/send-confirmation-email`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: email.toLowerCase(),
+        first_name,
+        last_name
+      })
     });
+
+    if (!emailResponse.ok) {
+      console.error('Failed to send welcome email:', await emailResponse.text());
+    }
 
     return NextResponse.json({
       success: true,
-      message: "Please check your email to confirm your account"
+      message: "Account created successfully! Please check your email for login information.",
+      userId: result.authUser.id,
+      redirectTo: "/login"
     });
 
   } catch (error) {
-    console.error("Signup error:", error);
-    return NextResponse.json(
-      { error: (error as Error).message },
-      { status: 400 }
-    );
+    console.error('Signup error:', error);
+    let errorMessage = "Failed to create account";
+    if (error instanceof Error) {
+      errorMessage = error.message;
+      console.error('Error details:', {
+        message: error.message,
+        stack: error.stack,
+        cause: error.cause
+      });
+    }
+    return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }

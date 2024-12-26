@@ -1,3 +1,5 @@
+// components/modals/SignUpModal.tsx
+
 import React from 'react';
 
 interface SignUpModalProps {
