@@ -44,16 +44,40 @@ export async function GET() {
       return new NextResponse("Unauthorized", { status: 401 });
     }
 
-    // Get user with preferences
-    const user = await prisma.god_users.findUnique({
-      where: { email: session.user.email },
+    // Get or create user with preferences
+    let user = await prisma.god_users.findFirst({
+      where: { 
+        OR: [
+          { email: session.user.email },
+          { auth_user_id: session.user.id }
+        ]
+      },
       include: {
         god_user_preferences: true
       }
     });
 
+    // Create user if not found
     if (!user) {
-      return new NextResponse("Not Found", { status: 404 });
+      user = await prisma.god_users.create({
+        data: {
+          auth_user_id: session.user.id,
+          email: session.user.email,
+          created_at: new Date(),
+          updated_at: new Date(),
+          god_user_preferences: {
+            create: {
+              theme_preferences: [],
+              blocked_themes: [],
+              preferred_bible_version: 'KJV',
+              message_length_preference: 'MEDIUM'
+            }
+          }
+        },
+        include: {
+          god_user_preferences: true
+        }
+      });
     }
 
     // Format response
@@ -64,7 +88,10 @@ export async function GET() {
 
   } catch (error) {
     console.error("[USER_PROFILE_GET]", error);
-    return new NextResponse("Internal Error", { status: 500 });
+    return new NextResponse(
+      error instanceof Error ? error.message : "Internal Error",
+      { status: 500 }
+    );
   }
 }
 
