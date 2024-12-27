@@ -8,44 +8,9 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
-interface Message {
-  role: "user" | "assistant";
-  content: string;
-  created_at: Date | string;
-}
-
-// Add rate limiting constants
-const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute
-const MAX_REQUESTS_PER_WINDOW = 30;
-const requestCounts = new Map<string, { count: number; timestamp: number }>();
-
-// Clean up old rate limit entries every minute
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, value] of requestCounts.entries()) {
-    if (now - value.timestamp > RATE_LIMIT_WINDOW) {
-      requestCounts.delete(key);
-    }
-  }
-}, RATE_LIMIT_WINDOW);
-
-// Rate limiting middleware
-function checkRateLimit(userId: string): boolean {
-  const now = Date.now();
-  const userRequests = requestCounts.get(userId);
-
-  if (!userRequests || now - userRequests.timestamp > RATE_LIMIT_WINDOW) {
-    requestCounts.set(userId, { count: 1, timestamp: now });
-    return true;
-  }
-
-  if (userRequests.count >= MAX_REQUESTS_PER_WINDOW) {
-    return false;
-  }
-
-  userRequests.count++;
-  return true;
-}
+// Add rate limiting and caching with per-conversation tracking
+const rateLimit = new Map<string, { [key: string]: number }>();
+const messageCache = new Map<string, { data: any; timestamp: number }>();
 
 export async function GET(
   req: Request,
@@ -53,86 +18,83 @@ export async function GET(
 ) {
   try {
     const session = await getServerSession(authOptions);
-    
-    if (!session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!session?.user?.id) {
+      return new NextResponse("Unauthorized", { status: 401 });
     }
 
-    // Check rate limit
-    if (!checkRateLimit(session.user.id)) {
-      return NextResponse.json(
-        { error: "Too many requests. Please wait a moment before trying again." },
-        { 
-          status: 429,
-          headers: {
-            'Retry-After': '60',
-            'X-RateLimit-Limit': MAX_REQUESTS_PER_WINDOW.toString(),
-            'X-RateLimit-Reset': (Date.now() + RATE_LIMIT_WINDOW).toString()
-          }
-        }
-      );
+    const conversationId = params.conversationId;
+    if (!conversationId) {
+      return new NextResponse("Conversation ID required", { status: 400 });
     }
 
-    // Get god_user
+    // Initialize rate limit tracking for user if not exists
+    if (!rateLimit.has(session.user.id)) {
+      rateLimit.set(session.user.id, {});
+    }
+
+    const userRateLimit = rateLimit.get(session.user.id)!;
+    const now = Date.now();
+
+    // Check rate limit per conversation
+    if (userRateLimit[conversationId] && (now - userRateLimit[conversationId]) < 2000) { // 2 second cooldown
+      // Check cache before rejecting
+      const cacheKey = `${session.user.id}:${conversationId}`;
+      const cached = messageCache.get(cacheKey);
+      if (cached && (now - cached.timestamp) < 30000) { // 30 second cache
+        return NextResponse.json(cached.data);
+      }
+      return new NextResponse("Too Many Requests", { status: 429 });
+    }
+
+    // Update rate limit timestamp
+    userRateLimit[conversationId] = now;
+
+    // Get the god_user
     const godUser = await prisma.god_users.findFirst({
       where: { auth_user_id: session.user.id }
     });
 
     if (!godUser) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
+      return new NextResponse("User not found", { status: 404 });
     }
 
-    // Verify user owns the conversation
+    // Verify the conversation belongs to the user
     const conversation = await prisma.god_chat_conversations.findFirst({
       where: {
-        id: params.conversationId,
+        id: conversationId,
         user_id: godUser.id
       }
     });
 
     if (!conversation) {
-      return NextResponse.json({ error: "Conversation not found" }, { status: 404 });
+      return new NextResponse("Conversation not found", { status: 404 });
     }
 
-    // Get messages with EST timestamps
+    // Get messages for the conversation
     const messages = await prisma.god_chat_messages.findMany({
       where: {
-        conversation_id: params.conversationId
+        conversation_id: conversationId
+      },
+      select: {
+        id: true,
+        messages: true,
+        created_at: true
       },
       orderBy: {
         created_at: 'asc'
       }
     });
 
-    // Separate user and AI messages
-    const userMessages = messages.find(msg => msg.role === 'user')?.messages || [];
-    const aiMessages = messages.find(msg => msg.role === 'assistant')?.messages || [];
+    // Cache the result
+    const cacheKey = `${session.user.id}:${conversationId}`;
+    messageCache.set(cacheKey, {
+      data: messages,
+      timestamp: now
+    });
 
-    // Combine and sort all messages
-    const allMessages = [...userMessages, ...aiMessages].sort((a: any, b: any) => 
-      new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-    );
-
-    // Convert timestamps to EST and format messages
-    const messagesWithEST = allMessages.map((msg: any) => ({
-      role: msg.role,
-      content: msg.content,
-      created_at: new Date(msg.timestamp)
-        .toLocaleString('en-US', { timeZone: 'America/New_York' })
-    }));
-
-    // Add cache control headers
-    const headers = {
-      'Cache-Control': 'private, max-age=10'
-    };
-
-    console.log('Fetched messages:', JSON.stringify(messagesWithEST, null, 2));
-    return NextResponse.json(messagesWithEST, { headers });
+    return NextResponse.json(messages);
   } catch (error) {
-    console.error('Error fetching messages:', error);
-    return NextResponse.json(
-      { error: "Failed to fetch messages" },
-      { status: 500 }
-    );
+    console.error('Error in GET /api/chat/messages:', error);
+    return new NextResponse("Internal Error", { status: 500 });
   }
 } 

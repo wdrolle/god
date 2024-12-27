@@ -37,11 +37,13 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { clsx } from "clsx";
+import { v4 as uuidv4 } from "uuid";
 
 interface Message {
+  id: number;
   role: "user" | "assistant";
   content: string;
-  created_at: string;
+  timestamp: string;
 }
 
 interface Conversation {
@@ -52,6 +54,46 @@ interface Conversation {
   god_chat_messages?: Message[];
 }
 
+interface ChatMessage {
+  id: number;
+  conversation_id: string;
+  messages: {
+    user_content: {
+      role: "user";
+      content: string;
+      timestamp: string;
+    };
+    ai_content: {
+      role: "assistant";
+      content: string;
+      timestamp: string;
+    };
+  }[];
+  created_at: string;
+}
+
+interface DatabaseMessage {
+  role: "user" | "assistant";
+  content: string;
+  timestamp: string;
+}
+
+interface MessageResponse {
+  messages: {
+    user_content?: {
+      role: string;
+      content: string;
+      timestamp: string;
+    };
+    ai_content?: {
+      role: string;
+      content: string;
+      timestamp: string;
+    };
+  }[];
+  id: number;
+}
+
 // Add dynamic import for theme toggle
 const ThemeToggle = dynamic(
   () => import("@/components/theme-toggle").then(mod => mod.ThemeToggle),
@@ -60,272 +102,130 @@ const ThemeToggle = dynamic(
   }
 );
 
+// Add debounce utility
+const debounce = <F extends (...args: any[]) => any>(
+  func: F,
+  waitFor: number
+) => {
+  let timeout: NodeJS.Timeout;
+  return (...args: Parameters<F>): Promise<ReturnType<F>> =>
+    new Promise(resolve => {
+      if (timeout) {
+        clearTimeout(timeout);
+      }
+      timeout = setTimeout(() => resolve(func(...args)), waitFor);
+    });
+};
+
+// Add profile cache
+const profileCache = {
+  data: null as any,
+  timestamp: 0
+};
+
+// Add retry utility
+const retry = async <T,>(
+  fn: () => Promise<T>,
+  retries: number = 3,
+  delay: number = 1000,
+  backoff: number = 2
+): Promise<T> => {
+  try {
+    return await fn();
+  } catch (error) {
+    if (retries === 0) throw error;
+    await new Promise(resolve => setTimeout(resolve, delay));
+    return retry(fn, retries - 1, delay * backoff, backoff);
+  }
+};
+
+// Add rate limiting and caching utilities
+const API_COOLDOWN = 1000; // 1 second between requests
+const CACHE_DURATION = 30000; // 30 seconds cache duration
+
+// Add interface for AI response
+interface AIResponse {
+  response: string;
+  model: string;
+  created_at: string;
+}
+
+// Add interface for generate response input
+interface GenerateResponseInput {
+  prompt: string;
+}
+
+// Add type for generate response function
+type GenerateResponseFn = (input: GenerateResponseInput) => Promise<AIResponse>;
+
 export default function BibleChatPage() {
-  const { theme } = useTheme(); // Access the current theme
+  const { data: session, status } = useSession();
+  const router = useRouter();
+
+  // State declarations
   const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [currentConversation, setCurrentConversation] = useState<string | null>(null);
-  const [editTitle, setEditTitle] = useState("");
+  const [input, setInput] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [isMessageLoading, setIsMessageLoading] = useState(false);
+  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-  const { data: session, status } = useSession();
-  const [firstName, setFirstName] = useState<string>("friend");
-  const router = useRouter();
+  const [editTitle, setEditTitle] = useState("");
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [conversationToDelete, setConversationToDelete] = useState<string | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [displayedResponse, setDisplayedResponse] = useState("");
-  const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [hasMore, setHasMore] = useState(true);
-  const hasLoadedRef = useRef<{ [key: string]: boolean }>({});
-  const rateLimitRef = useRef<{ [key: string]: boolean }>({});
-  const [shouldRefresh, setShouldRefresh] = useState(false);
+  const [firstName, setFirstName] = useState<string>("friend");
   const [isInitialized, setIsInitialized] = useState(false);
+  const [lastFetchTime, setLastFetchTime] = useState<{ [key: string]: number }>({});
+  const [tempMessages, setTempMessages] = useState<Message[]>([]);
+  const [isProcessing, setIsProcessing] = useState(false);
+
+  // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const [isMessageLoading, setIsMessageLoading] = useState(false);
-  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+  const messageCache = useRef<{ [key: string]: { messages: Message[]; timestamp: number } }>({});
+  const fetchInProgress = useRef<{ [key: string]: boolean }>({});
 
-  // Separate data fetching functions
-  const fetchConversationData = async (page = 1) => {
-    const response = await fetch(`/api/chat/conversations?page=${page}`, {
-      headers: {
-        "Content-Type": "application/json"
-      },
-      credentials: 'include'
-    });
-
-    if (!response.ok) {
-      throw new Error(response.status === 429 ? 'Rate limit reached' : 'Failed to load conversations');
-    }
-
-    return {
-      data: await response.json(),
-      totalCount: parseInt(response.headers.get('X-Total-Count') || '0'),
-      pageCount: parseInt(response.headers.get('X-Page-Count') || '1'),
-      currentPage: parseInt(response.headers.get('X-Current-Page') || '1')
-    };
-  };
-
-  const fetchMessageData = async (conversationId: string) => {
-    const response = await fetch(`/api/chat/messages/${conversationId}`, {
-      credentials: 'include'
-    });
-
-    if (!response.ok) {
-      throw new Error(response.status === 429 ? 'Rate limit reached' : 'Failed to fetch messages');
-    }
-
-    return await response.json();
-  };
-
-  // Declare fetchMessages before useEffect
-  const fetchMessages = useCallback(async (conversationId: string) => {
-    if (!session?.user || hasLoadedRef.current[conversationId] || rateLimitRef.current[conversationId]) return;
-
+  // Update fetchUserName with retry logic
+  const fetchUserName = useCallback(async () => {
     try {
-      setIsHistoryLoading(true);
-      const data = await fetchMessageData(conversationId);
-
-      if (Array.isArray(data)) {
-        const combinedMessages: Message[] = data.map(msg => ({
-          role: msg.role,
-          content: msg.content,
-          created_at: msg.created_at
-        })).sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-
-        setMessages(combinedMessages);
-        hasLoadedRef.current[conversationId] = true;
+      // Use cached data if less than 5 minutes old
+      if (profileCache.data && (Date.now() - profileCache.timestamp) < 300000) {
+        setFirstName(profileCache.data.first_name || "friend");
+        return;
       }
-    } catch (error: any) {
-      console.error('Error fetching messages:', error);
-      if (error.message === 'Rate limit reached') {
-        rateLimitRef.current[conversationId] = true;
-        toast.error('Too Many Requests. Please try again later.');
-      } else {
-        setMessages([]);
-        toast.error(error.message || 'Failed to fetch messages.');
-      }
-    } finally {
-      setIsHistoryLoading(false);
-    }
-  }, [session?.user]);
 
-  // Declare fetchConversations after fetchMessages
-  const fetchConversations = useCallback(async (page = 1) => {
-    if (!session?.user) return;
-
-    try {
-      setIsLoadingMore(true);
-      const { data, pageCount, currentPage } = await fetchConversationData(page);
-
-      if (Array.isArray(data)) {
-        // Process conversations without fetching messages
-        const processedData = data.map(conv => ({
-          ...conv,
-          god_chat_messages: [] // Initialize empty, will be loaded when conversation is selected
-        }));
-
-        setConversations(prev =>
-          page === 1 ? processedData : [...prev, ...processedData]
-        );
-
-        setTotalPages(pageCount);
-        setCurrentPage(currentPage);
-        setHasMore(currentPage < pageCount);
-      }
-    } catch (error: any) {
-      console.error('Error fetching conversations:', error);
-      toast.error(error instanceof Error ? error.message : 'Failed to load conversations');
-    } finally {
-      setIsLoadingMore(false);
-    }
-  }, [session?.user]);
-
-  // Consolidate initialization effects into one
-  useEffect(() => {
-    let mounted = true;
-
-    const initialize = async () => {
-      if (isInitialized || !session?.user || status !== 'authenticated') return;
-
-      try {
-        await fetchUserName();
-        await fetchConversations();
-        setIsInitialized(true);
-      } catch (error) {
-        console.error('Initialization error:', error);
-      }
-    };
-
-    initialize();
-
-    return () => {
-      mounted = false;
-    };
-  }, [session, status, isInitialized, fetchConversations]);
-
-  // Replace existing message fetching effect with a more controlled one
-  useEffect(() => {
-    let mounted = true;
-
-    const loadMessages = async () => {
-      if (!currentConversation || !session?.user || !isInitialized || isHistoryLoading) return;
-
-      if (!hasLoadedRef.current[currentConversation] && !rateLimitRef.current[currentConversation]) {
-        await fetchMessages(currentConversation);
-      }
-    };
-
-    loadMessages();
-
-    return () => {
-      mounted = false;
-    };
-  }, [currentConversation, session?.user, isInitialized, isHistoryLoading, fetchMessages]);
-
-  // Add scroll to bottom effect
-  useEffect(() => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [messages]);
-
-  // Add function to fetch user's name
-  const fetchUserName = async () => {
-    try {
-      const sessionData = await getSession();
-      if (!sessionData?.user?.id) return;
-
-      const response = await fetch("/api/user/profile");
-      if (response.ok) {
-        const data = await response.json();
-        setFirstName(data.first_name || "friend");
-      } else if (response.status === 429) {
-        toast.error('Too Many Requests. Please try again later.');
-      }
-    } catch (error) {
-      console.error("Error fetching user name:", error);
-      toast.error('Failed to fetch user name.');
-    }
-  };
-
-  // Add load more function
-  const loadMore = useCallback(async () => {
-    if (isLoadingMore || !hasMore) return;
-    setIsLoadingMore(true);
-    await fetchConversations(currentPage + 1);
-  }, [currentPage, hasMore, isLoadingMore, fetchConversations]);
-
-  const createNewConversation = async (): Promise<string | null> => {
-    try {
-      const title = "Chat_" + new Date().toLocaleString('en-US', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: true
-      }).replace(/[/,]/g, '-').replace(' ', '_');
-
-      console.log('DEBUG: Creating new conversation with title:', title);
-
-      const response = await fetch("/api/chat/conversations", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        credentials: 'include',
-        body: JSON.stringify({ title })
+      const response = await retry(async () => {
+        const res = await fetch("/api/user/profile");
+        if (!res.ok) throw new Error('Failed to fetch profile');
+        return res;
       });
 
-      console.log('DEBUG: Response status:', response.status);
-
       const data = await response.json();
-      console.log('DEBUG: Response data:', data);
-
-      if (!response.ok) {
-        throw new Error(data.error || data.details || 'Failed to create conversation');
-      }
-
-      if (!data.id) {
-        console.error('Invalid response format:', data);
-        throw new Error('Invalid response format from server');
-      }
-
-      // Add the new conversation to the state
-      setConversations(prev => [...prev, data]);
-      setCurrentConversation(data.id);
-      setMessages([]);
-      return data.id;
-    } catch (error: any) {
-      console.error("Error creating conversation:", error);
-      toast.error(error instanceof Error ? error.message : "Failed to create conversation");
-      return null;
+      profileCache.data = data;
+      profileCache.timestamp = Date.now();
+      setFirstName(data.first_name || "friend");
+    } catch (error) {
+      console.error("Error fetching user name:", error);
+      setFirstName("friend"); // Fallback
     }
-  };
+  }, []);
 
-  const typeResponse = async (response: string) => {
+  // Type AI response
+  const typeResponse = useCallback(async (response: string) => {
     setIsTyping(true);
     const paragraphs = response.split(/\n\n+/);
     let currentText = '';
 
     for (let paragraph of paragraphs) {
-      // Skip empty paragraphs
       if (!paragraph.trim()) continue;
-
-      // Add double newline before paragraph
       if (currentText) {
         currentText += '\n\n';
         setDisplayedResponse(currentText);
         await new Promise(resolve => setTimeout(resolve, 100));
       }
-
-      // Type out the paragraph
       const words = paragraph.split(' ');
       for (let word of words) {
         currentText += word + ' ';
@@ -333,180 +233,225 @@ export default function BibleChatPage() {
         await new Promise(resolve => setTimeout(resolve, 30));
       }
     }
-
     setIsTyping(false);
-  };
+  }, []);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!input.trim() || isMessageLoading) return;
-
+  // Update fetchMessages with better rate limiting and caching
+  const fetchMessages = useCallback(async (conversationId: string) => {
+    if (!conversationId || fetchInProgress.current[conversationId]) return;
+    
+    fetchInProgress.current[conversationId] = true;
+    
     try {
-      setIsMessageLoading(true);
-
-      // Create new chat if needed
-      if (!currentConversation) {
-        const newConvId = await createNewConversation();
-        if (!newConvId) {
-          throw new Error('Failed to create conversation');
+      const res = await fetch(`/api/chat/messages/${conversationId}`);
+      
+      if (res.status === 429) {
+        console.log('Rate limited, using cache if available');
+        if (messageCache.current[conversationId]) {
+          setMessages(messageCache.current[conversationId].messages);
+          return;
         }
-        setCurrentConversation(newConvId);
-        await new Promise(resolve => setTimeout(resolve, 100)); // Small delay to ensure state is updated
+        // Wait 2 seconds before retrying
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        return fetchMessages(conversationId);
+      }
+      
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.message || 'Failed to fetch messages');
       }
 
-      if (!currentConversation) {
-        throw new Error('No active conversation');
-      }
-
-      // Add user message immediately
-      const userMessage: Message = {
-        role: "user",
-        content: input.trim(),
-        created_at: new Date().toISOString()
-      };
-      setMessages(prev => [...prev, userMessage]);
-      setInput("");
-
-      // Get AI response
-      const response = await fetch("/api/chat/messages", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          message: input.trim(),
-          conversationId: currentConversation,
-          firstName: firstName
-        })
+      const data = await res.json();
+      
+      // Process messages
+      const processedMessages = data.flatMap((msg: any) => {
+        if (!msg.messages || !Array.isArray(msg.messages)) return [];
+        
+        return msg.messages.map((message: any, index: number) => ({
+          id: msg.id * 100 + index, // Ensure unique IDs
+          role: message.role,
+          content: message.content,
+          timestamp: message.timestamp || msg.created_at
+        }));
       });
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        if (response.status === 429) {
-          throw new Error('Rate limit reached. Please try again later.');
-        }
-        throw new Error(errorData.error || 'Failed to get response');
-      }
-
-      const data = await response.json();
-
-      if (!data.message) {
-        throw new Error('No message received from AI');
-      }
-
-      // Format the AI response with markdown and proper spacing
-      const formattedMessage = data.message.trim();
-
-      // Create temporary message for typing effect
-      const tempMessage: Message = {
-        role: "assistant",
-        content: "",
-        created_at: new Date().toISOString()
-      };
-      setMessages(prev => [...prev, tempMessage]);
-
-      // Start typing effect
-      await typeResponse(formattedMessage);
-
-      // Update the message with complete response
-      setMessages(prev => {
-        const newMessages = [...prev];
-        newMessages[newMessages.length - 1] = {
-          ...newMessages[newMessages.length - 1],
-          content: formattedMessage
-        };
-        return newMessages;
-      });
-
-      // Update conversation title if it's a new chat
-      const currentConv = conversations.find(conv => conv.id === currentConversation);
-      if (currentConv?.title.startsWith("Chat_")) {
-        const title = "Chat_" + new Date().toLocaleString('en-US', {
-          year: 'numeric',
-          month: '2-digit',
-          day: '2-digit',
-          hour: '2-digit',
-          minute: '2-digit',
-          hour12: true
-        }).replace(/[/,]/g, '-').replace(' ', '_');
-        await updateConversationTitle(currentConversation, title);
-      }
-
-      // After successful message send
-      setShouldRefresh(true);
-
-    } catch (error: any) {
-      console.error("Chat error:", error);
-      toast.error(error.message || 'Failed to send message');
-
-      const errorMessage = `### Error
-
-I apologize, ${firstName}, but I'm having trouble responding right now. Please try again later.
-
----
-
-*If this problem persists, please contact support.*
-
-With care,
-Zoe 🙏`;
-
-      setMessages(prev => [...prev, {
-        role: "assistant",
-        content: errorMessage,
-        created_at: new Date().toISOString()
-      }]);
-    } finally {
-      setIsMessageLoading(false);
-      setDisplayedResponse("");
-    }
-  };
-
-  const updateConversationTitle = async (conversationId: string | null, newTitle: string) => {
-    if (!conversationId) return;
-
-    try {
-      const response = await fetch(`/api/chat/conversations/${conversationId}`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ title: newTitle })
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to update conversation title');
-      }
-
-      setConversations(prev =>
-        prev.map(conv =>
-          conv.id === conversationId
-            ? { ...conv, title: newTitle }
-            : conv
-        )
+      // Sort messages by timestamp
+      const sortedMessages = processedMessages.sort((a: Message, b: Message) => 
+        new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
       );
+
+      // Update cache and state
+      messageCache.current[conversationId] = {
+        messages: sortedMessages,
+        timestamp: Date.now()
+      };
+      setMessages(sortedMessages);
     } catch (error) {
-      console.error("Error updating conversation title:", error);
-      // Don't show error toast for title update failure
+      console.error('Error fetching messages:', error);
+      toast.error('Failed to load messages');
+    } finally {
+      fetchInProgress.current[conversationId] = false;
+    }
+  }, []);
+
+  // Update fetchConversations with retry logic
+  const fetchConversations = useCallback(async () => {
+    if (!session?.user?.id || isLoading) return;
+    
+    try {
+      const response = await retry(async () => {
+        const res = await fetch("/api/chat/conversations");
+        if (!res.ok) throw new Error('Failed to fetch conversations');
+        return res;
+      });
+      
+      const data = await response.json();
+      setConversations(data);
+      
+      // If there are conversations and none selected, select the first one
+      if (data.length && !currentConversation) {
+        setCurrentConversation(data[0].id);
+        await fetchMessages(data[0].id);
+      }
+    } catch (error) {
+      console.error('Error fetching conversations:', error);
+      toast.error('Failed to load conversations');
+    }
+  }, [session?.user?.id, isLoading, currentConversation, fetchMessages]);
+
+  // Update initialization effect
+  useEffect(() => {
+    const initialize = async () => {
+      if (isInitialized || status !== "authenticated" || !session?.user) return;
+      
+      try {
+        setIsLoading(true);
+        
+        // Fetch user name and conversations sequentially to avoid rate limits
+        await retry(async () => {
+          await fetchUserName();
+          await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
+          await fetchConversations();
+        });
+        
+        setIsInitialized(true);
+      } catch (error) {
+        console.error('Initialization error:', error);
+        toast.error('Failed to initialize chat');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    initialize();
+  }, [status, session, isInitialized, fetchConversations, fetchUserName]);
+
+  // Update handleConversationSelect to handle message loading better
+  const handleConversationSelect = useCallback((conversationId: string) => {
+    setCurrentConversation(conversationId);
+    
+    // Always show cached messages first if available
+    if (messageCache.current[conversationId]) {
+      console.log('Showing cached messages immediately');
+      setMessages(messageCache.current[conversationId].messages);
+      return; // Don't fetch if we have cached messages
+    }
+
+    // Only fetch if we don't have cached messages
+    setMessages([]); // Clear messages while loading
+    
+    // Add a small delay before fetching to prevent rate limiting
+    setTimeout(() => {
+      if (!fetchInProgress.current[conversationId]) {
+        fetchMessages(conversationId);
+      }
+    }, 500);
+  }, [fetchMessages]);
+
+  // Update message loading effect to prevent excessive retries
+  useEffect(() => {
+    if (!isInitialized || !session?.user || !currentConversation) return;
+    
+    const initializeMessages = async () => {
+      if (!messageCache.current[currentConversation] && !fetchInProgress.current[currentConversation]) {
+        try {
+          await fetchMessages(currentConversation);
+        } catch (error) {
+          console.error('Error initializing messages:', error);
+        }
+      }
+    };
+
+    initializeMessages();
+  }, [isInitialized, session?.user, currentConversation, fetchMessages]);
+
+  // Auto scroll to bottom
+  useEffect(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [messages]);
+
+  const createNewConversation = async () => {
+    try {
+      const title = `Chat_${new Date().toLocaleString('en-US', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+      }).replace(/[/,]/g, '-').replace(/:/g, '-').replace(' ', '_')}`;
+
+      const res = await fetch("/api/chat/conversations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title })
+      });
+
+      if (!res.ok) {
+        const error = await res.json();
+        console.error('Failed to create conversation:', error);
+        throw new Error(error.message || "Failed to create conversation");
+      }
+
+      const newConv = await res.json();
+      
+      // Update conversations state
+      setConversations(prev => [newConv, ...prev]);
+      setCurrentConversation(newConv.id);
+      
+      // Set initial messages if they exist
+      if (newConv.god_chat_messages?.length) {
+        const messages = newConv.god_chat_messages.flatMap((msg: any) => {
+          if (!msg.messages || !Array.isArray(msg.messages)) return [];
+          
+          return msg.messages.map((message: any, index: number) => ({
+            id: msg.id * 100 + index,
+            role: message.role,
+            content: message.content,
+            timestamp: message.timestamp || msg.created_at
+          }));
+        });
+        setMessages(messages);
+      } else {
+        setMessages([]);
+      }
+
+      return newConv.id;
+    } catch (error: any) {
+      console.error('Error creating conversation:', error);
+      toast.error(error.message || 'Failed to create new conversation');
+      return null;
     }
   };
 
-  // Add helper function to get auth token
-  const getAuthToken = async () => {
-    const supabase = createClientComponentClient();
-    const {
-      data: { session }
-    } = await supabase.auth.getSession();
-    return session?.access_token;
-  };
-
+  // Update delete conversation to clear cache
   const deleteConversation = async (conversationId: string) => {
     try {
-      // Delete conversation and its messages
       const response = await fetch(`/api/chat/conversations/${conversationId}`, {
         method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json'
-        }
+        headers: { 'Content-Type': 'application/json' }
       });
 
       if (!response.ok) {
@@ -514,10 +459,10 @@ Zoe 🙏`;
         throw new Error(error.error || 'Failed to delete conversation');
       }
 
-      // Update local state
+      // Clear cache and update state
+      delete messageCache.current[conversationId];
       setConversations(prev => prev.filter(conv => conv.id !== conversationId));
 
-      // If the deleted conversation was the current one, clear it
       if (currentConversation === conversationId) {
         setCurrentConversation(null);
         setMessages([]);
@@ -530,13 +475,229 @@ Zoe 🙏`;
     }
   };
 
-  // Update conversation selection handler
-  const handleConversationSelect = useCallback((conversationId: string) => {
-    setCurrentConversation(conversationId);
-    if (!hasLoadedRef.current[conversationId] && !rateLimitRef.current[conversationId]) {
-      fetchMessages(conversationId);
+  const updateConversationTitle = async (conversationId: string | null, newTitle: string) => {
+    if (!conversationId) return;
+    setIsUpdating(true);
+    
+    try {
+      const res = await fetch(`/api/chat/conversations/${conversationId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: newTitle })
+      });
+
+      if (!res.ok) throw new Error("Failed to update title");
+      
+      setConversations(prev =>
+        prev.map(conv =>
+          conv.id === conversationId
+            ? { ...conv, title: newTitle }
+            : conv
+        )
+      );
+      
+      setIsEditModalOpen(false);
+      setEditTitle("");
+    } catch (error: any) {
+      toast.error(error.message);
+    } finally {
+      setIsUpdating(false);
     }
-  }, [fetchMessages]);
+  };
+
+  // Update handleSubmit with proper message format
+  const handleSubmit = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!input.trim() || isMessageLoading) return;
+    
+    setIsMessageLoading(true);
+    const userMessage = input.trim();
+    setInput(""); // Clear input immediately after getting the value
+    
+    try {
+      // Create conversation if needed
+      if (!currentConversation) {
+        const newConvId = await createNewConversation();
+        if (!newConvId) throw new Error("Failed to create conversation");
+        setCurrentConversation(newConvId);
+      }
+
+      // Add user message to UI immediately
+      const userMessageObj: Message = {
+        id: Date.now(),
+        role: "user",
+        content: userMessage,
+        timestamp: new Date().toISOString()
+      };
+      setMessages(prev => [...prev, userMessageObj]);
+
+      // Generate AI response using Llama
+      const llamaResponse = await fetch("http://localhost:11434/api/generate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "llama3.2",
+          prompt: `You are a wise and knowledgeable theologian, well-versed in biblical scripture, theological concepts, and spiritual guidance. Your responses should:
+          1. Draw from biblical wisdom and scripture
+          2. Provide thoughtful spiritual guidance
+          3. Reference relevant Bible verses when appropriate
+          4. Explain complex theological concepts clearly
+          5. Maintain a respectful and pastoral tone
+          6. Encourage spiritual growth and understanding
+
+          Question: ${userMessage}
+
+          Please provide a theological response that addresses the spiritual aspects of the question and offers biblical wisdom and guidance.`,
+          stream: false,
+          temperature: 0.7,
+          max_tokens: 2000
+        })
+      });
+
+      if (!llamaResponse.ok) {
+        console.error('Llama API error:', await llamaResponse.text());
+        throw new Error(`Llama API error: ${llamaResponse.status}`);
+      }
+
+      const llamaData = await llamaResponse.json();
+      console.log('Llama response:', llamaData);
+
+      if (!llamaData.response) {
+        console.error('Invalid Llama response:', llamaData);
+        throw new Error('Invalid response from Llama');
+      }
+
+      const aiResponse = llamaData.response;
+
+      // Only save to database if we have a valid AI response
+      if (!aiResponse.trim()) {
+        throw new Error('Empty AI response');
+      }
+
+      // Save both messages to database
+      const messageData = {
+        conversationId: currentConversation,
+        messages: [
+          {
+            id: uuidv4(),
+            user_content: {
+              role: "user",
+              content: userMessage,
+              timestamp: new Date().toISOString()
+            },
+            ai_content: {
+              role: "assistant",
+              content: aiResponse,
+              timestamp: new Date().toISOString()
+            }
+          }
+        ]
+      };
+
+      console.log('Sending message data:', JSON.stringify(messageData, null, 2));
+
+      const res = await fetch("/api/chat/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(messageData)
+      });
+
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.message || "Failed to save message");
+      }
+
+      // Add AI response to UI
+      const aiMessageObj: Message = {
+        id: Date.now() + 1,
+        role: "assistant",
+        content: aiResponse,
+        timestamp: new Date().toISOString()
+      };
+      setMessages(prev => [...prev, aiMessageObj]);
+
+      // Type out the AI response
+      await typeResponse(aiResponse);
+
+    } catch (error: any) {
+      console.error('Error in handleSubmit:', error);
+      toast.error(error.message || 'Failed to send message');
+      // Add error message to UI
+      const errorMessage: Message = {
+        id: Date.now(),
+        role: "assistant",
+        content: "I apologize, but I encountered an error. Please try again.",
+        timestamp: new Date().toISOString()
+      };
+      setMessages(prev => [...prev, errorMessage]);
+    } finally {
+      setIsMessageLoading(false);
+    }
+  }, [input, currentConversation, isMessageLoading, typeResponse, createNewConversation]);
+
+  // Update message display to handle timestamps safely
+  const formatMessageTime = (timestamp: string) => {
+    try {
+      const date = new Date(timestamp);
+      if (isNaN(date.getTime())) {
+        return format(new Date(), "h:mm a");
+      }
+      return format(date, "h:mm a");
+    } catch (error) {
+      return format(new Date(), "h:mm a");
+    }
+  };
+
+  function processMessages(data: ChatMessage[]): Message[] {
+    setIsProcessing(true);
+    const allMessages: Message[] = [];
+
+    try {
+      data.forEach(messageRow => {
+        if (messageRow.messages && Array.isArray(messageRow.messages)) {
+          messageRow.messages.forEach(msg => {
+            // Process user message
+            if (msg.user_content) {
+              allMessages.push({
+                id: allMessages.length,
+                role: "user",
+                content: msg.user_content.content,
+                timestamp: msg.user_content.timestamp
+              });
+            }
+            // Process AI message and format markdown
+            if (msg.ai_content) {
+              const formattedContent = msg.ai_content.content
+                .replace(/\\n/g, '\n')
+                .replace(/\\"/g, '"')
+                .replace(/\\\\/g, '\\');
+
+              allMessages.push({
+                id: allMessages.length,
+                role: "assistant",
+                content: formattedContent,
+                timestamp: msg.ai_content.timestamp
+              });
+            }
+          });
+        }
+      });
+
+      // Sort messages by timestamp
+      const sortedMessages = allMessages.sort((a: Message, b: Message) => 
+        new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+      );
+
+      return sortedMessages;
+
+    } catch (error) {
+      console.error('Error processing messages:', error);
+      setIsProcessing(false);
+      return [];
+    }
+  }
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-2 lg:px-8 py-0">
@@ -611,33 +772,6 @@ Zoe 🙏`;
                   </div>
                 </div>
               ))}
-
-              {hasMore && (
-                <button
-                  onClick={loadMore}
-                  disabled={isLoadingMore}
-                  className="w-full mt-4 p-2 text-sm text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
-                >
-                  {isLoadingMore ? (
-                    <span className="flex items-center justify-center">
-                      <Clock className="h-4 w-4 animate-spin mr-2" />
-                      Loading...
-                    </span>
-                  ) : (
-                    'Load More'
-                  )}
-                </button>
-              )}
-
-              {/* Retry Button for Rate Limited Conversations */}
-              {currentConversation && rateLimitRef.current[currentConversation] && (
-                <div className="text-center mt-4">
-                  <p className="text-red-500">You have reached the maximum number of requests. Please try again later.</p>
-                  <Button onClick={() => { rateLimitRef.current[currentConversation] = false; fetchMessages(currentConversation); }}>
-                    Retry
-                  </Button>
-                </div>
-              )}
             </div>
           </div>
 
@@ -648,10 +782,36 @@ Zoe 🙏`;
                 <div className="flex justify-center items-center h-full">
                   <Clock className="animate-spin h-6 w-6 text-blue-600" />
                 </div>
-              ) : (
-                messages.map((message, index) => (
+              ) : isProcessing ? (
+                // Show temporary messages while processing
+                tempMessages.map((message) => (
                   <div
-                    key={index}
+                    key={message.id}
+                    className={`flex ${
+                      message.role === "user" ? "justify-end" : "justify-start"
+                    } opacity-50 transition-opacity duration-200`}
+                  >
+                    <div
+                      className={`max-w-[80%] rounded-lg px-4 py-2 ${
+                        message.role === "user"
+                          ? "bg-blue-100 dark:bg-blue-900/30"
+                          : "bg-gray-100 dark:bg-gray-800"
+                      }`}
+                    >
+                      <div className="whitespace-pre-wrap text-gray-900 dark:text-gray-100">
+                        {message.content}
+                      </div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        {format(new Date(message.timestamp), "MMM d, h:mm a")}
+                      </div>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                // Show final processed messages
+                messages.map((message) => (
+                  <div
+                    key={message.id}
                     className={`flex ${
                       message.role === "user" ? "justify-end" : "justify-start"
                     }`}
@@ -659,34 +819,30 @@ Zoe 🙏`;
                     <div
                       className={`max-w-[80%] rounded-lg px-4 py-2 ${
                         message.role === "user"
-                          ? "bg-transparent text-primary-foreground"
-                          : "bg-muted"
+                          ? "bg-blue-100 dark:bg-blue-900/30"
+                          : "bg-gray-100 dark:bg-gray-800"
                       }`}
                     >
                       {message.role === "assistant" ? (
                         <div
                           className="prose dark:prose-invert max-w-none whitespace-pre-wrap"
                           dangerouslySetInnerHTML={{
-                            __html: marked(
-                              message === messages[messages.length - 1] && isTyping
-                                ? displayedResponse
-                                : message.content,
-                              {
-                                breaks: true,
-                                gfm: true,
-                                smartLists: true,
-                                smartypants: true,
-                                mangle: false,
-                                headerIds: false
-                              }
-                            )
+                            __html: marked(message.content, {
+                              breaks: true,
+                              gfm: true,
+                              smartLists: true,
+                              smartypants: true,
+                              headerIds: false
+                            })
                           }}
                         />
                       ) : (
-                        <div className="whitespace-pre-wrap">{message.content}</div>
+                        <div className="whitespace-pre-wrap text-gray-900 dark:text-gray-100">
+                          {message.content}
+                        </div>
                       )}
-                      <div className="text-xs opacity-70 mt-1">
-                        {format(new Date(message.created_at), "h:mm a")}
+                      <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        {format(new Date(message.timestamp), "MMM d, h:mm a")}
                       </div>
                     </div>
                   </div>
