@@ -25,6 +25,7 @@
     }
   },
   "dependencies": {
+    "@clerk/nextjs": "^6.9.6",
     "@hookform/resolvers": "^3.9.1",
     "@langchain/core": "^0.3.24",
     "@llama-node/core": "^0.1.6",

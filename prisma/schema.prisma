@@ -338,10 +338,8 @@ model god_chat_conversations {
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model god_chat_messages {
   id                     Int                    @id @default(autoincrement())
-  role                   String                 @db.VarChar(20)
-  content                String
   conversation_id        String                 @db.Uuid
-  messages               Json[]                 @default([])
+  messages               Json                   @default("[]")
   created_at             DateTime?              @default(dbgenerated("(now() AT TIME ZONE 'utc+4'::text)")) @db.Timestamptz(6)
   god_chat_conversations god_chat_conversations @relation(fields: [conversation_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 

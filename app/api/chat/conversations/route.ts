@@ -23,56 +23,20 @@
  */
 
 import { NextResponse } from "next/server";
-import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
-import { cookies } from "next/headers";
-import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
-import { headers } from 'next/headers';
+import { prisma } from "@/lib/prisma";
 
 // Force dynamic rendering and use Node.js runtime
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
-
-// Simple in-memory cache for rate limiting
-const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute
-const MAX_REQUESTS_PER_WINDOW = 30;
-const requestCounts = new Map<string, { count: number; timestamp: number }>();
-
-// Clean up old rate limit entries every minute
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, value] of requestCounts.entries()) {
-    if (now - value.timestamp > RATE_LIMIT_WINDOW) {
-      requestCounts.delete(key);
-    }
-  }
-}, RATE_LIMIT_WINDOW);
-
-// Rate limiting middleware
-function checkRateLimit(userId: string): boolean {
-  const now = Date.now();
-  const userRequests = requestCounts.get(userId);
-
-  if (!userRequests || now - userRequests.timestamp > RATE_LIMIT_WINDOW) {
-    requestCounts.set(userId, { count: 1, timestamp: now });
-    return true;
-  }
-
-  if (userRequests.count >= MAX_REQUESTS_PER_WINDOW) {
-    return false;
-  }
-
-  userRequests.count++;
-  return true;
-}
 
 /**
  * GET Handler - Fetch User's Conversations
  * 
  * Flow:
  * 1. Verify authentication
- * 2. Get god_users record for auth user
+ * 2. Get or create god_user for the authenticated user
  * 3. Fetch all conversations for the user
  * 
  * Returns:
@@ -84,83 +48,73 @@ function checkRateLimit(userId: string): boolean {
 export async function GET(req: Request) {
   try {
     const session = await getServerSession(authOptions);
-    
     if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return new NextResponse("Unauthorized", { status: 401 });
     }
 
-    // Check rate limit
-    if (!checkRateLimit(session.user.id)) {
-      return NextResponse.json(
-        { error: "Too many requests. Please wait a moment before trying again." },
-        { 
-          status: 429,
-          headers: {
-            'Retry-After': '60',
-            'X-RateLimit-Limit': MAX_REQUESTS_PER_WINDOW.toString(),
-            'X-RateLimit-Reset': (Date.now() + RATE_LIMIT_WINDOW).toString()
-          }
-        }
-      );
-    }
-
-    // Get god_user for the auth user
+    // Get the god_user
     const godUser = await prisma.god_users.findFirst({
+      where: { auth_user_id: session.user.id }
+    });
+
+    // If no god_user exists, create one with initial conversation
+    if (!godUser) {
+      const newGodUser = await prisma.god_users.create({
+        data: {
+          auth_user_id: session.user.id,
+          email: session.user.email || '',
+          created_at: new Date(),
+          updated_at: new Date()
+        }
+      });
+
+      // Create initial conversation
+      const conversation = await prisma.god_chat_conversations.create({
+        data: {
+          user_id: newGodUser.id,
+          title: 'Welcome to Bible Chat',
+          created_at: new Date(),
+          updated_at: new Date()
+        }
+      });
+
+      // Create welcome message
+      await prisma.god_chat_messages.create({
+        data: {
+          conversation_id: conversation.id,
+          messages: {
+            id: uuidv4(),
+            user_content: "Welcome to Bible Chat",
+            ai_content: "Welcome to Bible Chat! I am here to help you explore and understand the Bible. Feel free to ask any questions about scripture, theology, or biblical history.",
+            timestamp: new Date().toISOString()
+          },
+          created_at: new Date()
+        }
+      });
+
+      // Return the initial conversation
+      return NextResponse.json([{
+        id: conversation.id,
+        title: conversation.title,
+        created_at: conversation.created_at,
+        updated_at: conversation.updated_at
+      }]);
+    }
+
+    // Get all conversations for the user
+    const conversations = await prisma.god_chat_conversations.findMany({
       where: {
-        auth_user_id: session.user.id
+        user_id: godUser.id
+      },
+      orderBy: {
+        updated_at: 'desc'
       }
     });
 
-    if (!godUser) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
-    }
-
-    // Fetch all conversations for the user with pagination
-    const page = parseInt(new URL(req.url).searchParams.get('page') || '1');
-    const limit = 20;
-    const offset = (page - 1) * limit;
-
-    const [conversations, total] = await Promise.all([
-      prisma.god_chat_conversations.findMany({
-        where: {
-          user_id: godUser.id
-        },
-        include: {
-          god_chat_messages: {
-            orderBy: {
-              created_at: 'asc'
-            },
-            take: 1 // Only get the latest message for preview
-          }
-        },
-        orderBy: {
-          updated_at: 'desc'
-        },
-        take: limit,
-        skip: offset
-      }),
-      prisma.god_chat_conversations.count({
-        where: {
-          user_id: godUser.id
-        }
-      })
-    ]);
-
-    // Add cache control headers
-    const headers = {
-      'Cache-Control': 'private, max-age=10',
-      'X-Total-Count': total.toString(),
-      'X-Page-Count': Math.ceil(total / limit).toString(),
-      'X-Current-Page': page.toString()
-    };
-
-    return NextResponse.json(conversations, { headers });
+    return NextResponse.json(conversations);
   } catch (error) {
-    console.error('Server error:', error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    console.error('Error in GET /api/chat/conversations:', error);
+    return new NextResponse("Failed to fetch conversations", { status: 500 });
   }
 }
 
@@ -169,7 +123,7 @@ export async function GET(req: Request) {
  * 
  * Flow:
  * 1. Verify authentication
- * 2. Get god_users record for auth user
+ * 2. Get or create god_user for the authenticated user
  * 3. Create new chat
  * 
  * Request Body: None required
@@ -182,69 +136,83 @@ export async function GET(req: Request) {
  */
 export async function POST(req: Request) {
   try {
-    console.log('DEBUG: Starting POST chat request');
     const session = await getServerSession(authOptions);
-    console.log('DEBUG: Session:', JSON.stringify(session, null, 2));
-    
     if (!session?.user?.id) {
-      console.error('No session found');
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return new NextResponse("Unauthorized", { status: 401 });
     }
 
-    // Parse request body
-    const body = await req.json();
-    console.log('DEBUG: Request body:', JSON.stringify(body, null, 2));
-
-    // Start transaction
-    console.log('DEBUG: Starting transaction');
-    const conversation = await prisma.$transaction(async (tx) => {
-      // Get god_user using auth_user_id from session
-      console.log('DEBUG: Looking up god_user for auth_user_id:', session.user.id);
-      const godUser = await tx.god_users.findFirst({
-        where: { 
-          auth_user_id: session.user.id
-        }
-      });
-      console.log('DEBUG: Found god_user:', JSON.stringify(godUser, null, 2));
-
-      if (!godUser) {
-        console.error('God user not found for auth_user_id:', session.user.id);
-        throw new Error('User not found');
-      }
-
-      // Generate a unique ID for the conversation
-      const id = crypto.randomUUID();
-
-      // Create conversation
-      console.log('DEBUG: Creating new chat for user_id:', godUser.id);
-      return await tx.god_chat_conversations.create({
-        data: {
-          id: id,
-          user_id: godUser.id,
-          title: body.title || "New Chat",
-          created_at: new Date(),
-          updated_at: new Date()
-        },
-        include: {
-          god_chat_messages: true
-        }
-      });
+    // Get god_user
+    const godUser = await prisma.god_users.findFirst({
+      where: { auth_user_id: session.user.id }
     });
-    console.log('DEBUG: Created chat:', JSON.stringify(conversation, null, 2));
 
-    return NextResponse.json(conversation);
-  } catch (error) {
-    console.error('Server error:', error);
-    return NextResponse.json(
-      { 
-        error: "Failed to create chat", 
-        details: error instanceof Error ? error.message : 'Unknown error'
+    if (!godUser) {
+      return new NextResponse("User not found", { status: 404 });
+    }
+
+    const body = await req.json();
+    const { title } = body;
+
+    // Create new conversation
+    const conversation = await prisma.god_chat_conversations.create({
+      data: {
+        user_id: godUser.id,
+        title: title || `Chat ${new Date().toLocaleString()}`,
+        created_at: new Date(),
+        updated_at: new Date()
       },
+      include: {
+        god_chat_messages: true
+      }
+    });
+
+    // Create welcome message for new conversation
+    await prisma.god_chat_messages.create({
+      data: {
+        conversation_id: conversation.id,
+        messages: [{
+          id: uuidv4(),
+          user_content: {
+            role: "user",
+            content: "Welcome to Bible Chat",
+            timestamp: new Date().toISOString()
+          },
+          ai_content: {
+            role: "assistant",
+            content: "Welcome to Bible Chat! I am here to help you explore and understand the Bible. Feel free to ask any questions about scripture, theology, or biblical history.",
+            timestamp: new Date().toISOString()
+          }
+        }],
+        created_at: new Date()
+      }
+    });
+
+    // Fetch the conversation again with the welcome message
+    const conversationWithMessages = await prisma.god_chat_conversations.findUnique({
+      where: { id: conversation.id },
+      include: {
+        god_chat_messages: true
+      }
+    });
+
+    if (!conversationWithMessages) {
+      throw new Error("Failed to create conversation");
+    }
+
+    return NextResponse.json(conversationWithMessages);
+  } catch (error) {
+    console.error('Error in POST /api/chat/conversations:', error);
+    return new NextResponse(
+      error instanceof Error ? error.message : "Failed to create conversation",
       { status: 500 }
     );
   }
 }
 
+
+function uuidv4(): any {
+  throw new Error("Function not implemented.");
+}
 /**
  * Implementation Notes:
  * 
