@@ -1,6 +1,6 @@
 #!/bin/bash
-# Make it executable: chmod +x git-workflow.sh
-# Run it: ./git-workflow.sh
+# Make it executable: chmod +x scripts/git-workflow.sh
+# Run it: ./scripts/git-workflow.sh
 
 # Function to handle errors
 handle_error() {
